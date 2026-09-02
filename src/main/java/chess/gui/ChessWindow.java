@@ -1228,21 +1228,24 @@ public class ChessWindow extends JFrame {
         );
 
 
-        setSize(
-                Math.max(
-                        getWidth(),
-                        1280
-                ),
-                Math.max(
-                        getHeight(),
-                        800
-                )
-        );
-
-
+        /*
+         * M88.3 startup-fit polish:
+         *
+         * Use the same taskbar-aware sizing path that Setup and Endgame already
+         * use instead of forcing the packed startup window to at least 1280x800.
+         * On scaled / shorter Windows desktops the old startup path could extend
+         * below the usable work area even though resizeForCurrentMode() already
+         * knows how to clamp the window to the actual screen bounds.
+         *
+         * Center first, then let the existing helper shrink/reposition only when
+         * necessary. On a large enough display the normal preferred size is kept.
+         */
         setLocationRelativeTo(
                 null
         );
+
+
+        resizeForCurrentMode();
 
 
         analyzeCurrentPosition();

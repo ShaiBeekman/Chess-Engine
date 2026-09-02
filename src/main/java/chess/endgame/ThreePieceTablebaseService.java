@@ -17,18 +17,39 @@ import java.util.Map;
  * Lookup order:
  *
  *     1. in-memory cache
- *     2. packaged classpath resource
- *     3. development file under src/main/resources/tablebases
- *     4. retrograde build fallback
+ *     2. external release file under tablebases
+ *     3. packaged classpath resource
+ *     4. development file under src/main/resources/tablebases
+ *     5. retrograde build fallback
  *
- * The development-file path keeps IntelliJ development reliable even if
- * src/main/resources is not copied into the output directory. A packaged
- * application still uses the normal classpath-resource path.
+ * The external tablebase path is the normal v1.0 release/runtime location.
+ * Packaged resources remain supported for compatibility, and the development
+ * path keeps IntelliJ development reliable even when resources are not copied
+ * into the output directory.
  */
 public final class ThreePieceTablebaseService {
 
     private static final String RESOURCE_ROOT =
             "/tablebases/";
+
+    /*
+     * M88.3A:
+     *
+     * Release tablebases live beside the application in:
+     *
+     *     tablebases/
+     *
+     * This mirrors the existing four-piece runtime layout:
+     *
+     *     tablebases/four-piece/
+     *
+     * The path is deliberately relative to the process working directory,
+     * matching the rest of the current release asset lookup behavior.
+     */
+    private static final Path EXTERNAL_RESOURCE_ROOT =
+            Path.of(
+                    "tablebases"
+            );
 
     private static final Path DEVELOPMENT_RESOURCE_ROOT =
             Path.of(
@@ -67,16 +88,23 @@ public final class ThreePieceTablebaseService {
                         key
                 );
 
-
         if (existing != null) {
             return existing;
         }
 
 
         ThreePieceTablebase tablebase =
-                loadPackagedTablebase(
+                loadExternalTablebase(
                         key
                 );
+
+
+        if (tablebase == null) {
+            tablebase =
+                    loadPackagedTablebase(
+                            key
+                    );
+        }
 
 
         if (tablebase == null) {
@@ -127,6 +155,59 @@ public final class ThreePieceTablebaseService {
 
     public synchronized void clear() {
         cache.clear();
+    }
+
+
+    // =========================================================
+    // EXTERNAL RELEASE RESOURCE
+    // =========================================================
+
+    private ThreePieceTablebase loadExternalTablebase(
+            Key key
+    ) {
+
+        Path path =
+                EXTERNAL_RESOURCE_ROOT.resolve(
+                        fileName(
+                                key
+                        )
+                );
+
+
+        if (!Files.isRegularFile(
+                path
+        )) {
+            return null;
+        }
+
+
+        try {
+
+            ThreePieceTablebase loaded =
+                    ThreePieceTablebaseCodec.load(
+                            path
+                    );
+
+
+            validateLoadedIdentity(
+                    key,
+                    loaded,
+                    path.toAbsolutePath()
+                            .toString()
+            );
+
+
+            return loaded;
+
+        } catch (IOException exception) {
+
+            throw new IllegalStateException(
+                    "Failed to load external tablebase file "
+                            + path.toAbsolutePath()
+                            + ".",
+                    exception
+            );
+        }
     }
 
 

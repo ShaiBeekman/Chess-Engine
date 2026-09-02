@@ -344,6 +344,7 @@ public class ChessWindow extends JFrame {
     private JLabel versionBadgeLabel;
     private JButton loadFenButton;
     private JButton copyFenButton;
+    private JButton engineHomeButton;
     private JButton resetPositionButton;
     private JButton setupPositionButton;
     private JButton endgameButton;
@@ -1563,6 +1564,23 @@ public class ChessWindow extends JFrame {
         );
 
 
+        engineHomeButton =
+                createHeaderActionButton(
+                        "Home"
+                );
+
+
+        engineHomeButton.setToolTipText(
+                "Return to the standard starting position and normal engine workspace."
+        );
+
+
+        engineHomeButton.addActionListener(
+                event ->
+                        returnToEngineHome()
+        );
+
+
         resetPositionButton =
                 createHeaderActionButton(
                         "Reset"
@@ -1574,7 +1592,9 @@ public class ChessWindow extends JFrame {
 
                     if (boardPanel.isSetupMode()) {
 
-                        cancelPositionSetup();
+                        piecePalettePanel.cancelActiveDrag();
+                        boardPanel.resetSetupEditsToStart();
+                        refreshSetupPanel();
 
                     } else {
 
@@ -1664,6 +1684,11 @@ public class ChessWindow extends JFrame {
 
         headerActionsWrapper.setOpaque(
                 false
+        );
+
+
+        headerActionsWrapper.add(
+                engineHomeButton
         );
 
 
@@ -1817,6 +1842,9 @@ public class ChessWindow extends JFrame {
 
                     case "Endgame" ->
                             78;
+
+                    case "Home" ->
+                            68;
 
                     case "Copy FEN" ->
                             86;
@@ -2226,6 +2254,14 @@ public class ChessWindow extends JFrame {
 
 
         styleHeaderActionButton(
+                engineHomeButton,
+                primary,
+                unselected,
+                border
+        );
+
+
+        styleHeaderActionButton(
                 resetPositionButton,
                 primary,
                 unselected,
@@ -2366,13 +2402,30 @@ public class ChessWindow extends JFrame {
                         ? new Color(42, 53, 64)
                         : new Color(210, 216, 224);
 
+        boolean selectorEnabled =
+                engineModeDropdownButton.isEnabled();
+
+        Color selectorForeground =
+                selectorEnabled
+                        ? foreground
+                        : (darkTheme
+                        ? new Color(101, 110, 121)
+                        : new Color(145, 151, 160));
+
+        Color selectorBorder =
+                selectorEnabled
+                        ? border
+                        : (darkTheme
+                        ? new Color(50, 56, 64)
+                        : new Color(222, 226, 232));
+
         engineModeDropdownButton.setText(
                 activeAnalysisEngineLabel()
                         + " ▾"
         );
 
         engineModeDropdownButton.setForeground(
-                foreground
+                selectorForeground
         );
 
         engineModeDropdownButton.setBackground(
@@ -2382,7 +2435,7 @@ public class ChessWindow extends JFrame {
         engineModeDropdownButton.setBorder(
                 BorderFactory.createCompoundBorder(
                         BorderFactory.createLineBorder(
-                                border,
+                                selectorBorder,
                                 1,
                                 true
                         ),
@@ -2398,7 +2451,9 @@ public class ChessWindow extends JFrame {
         engineModeDropdownButton.setFocusPainted(false);
         engineModeDropdownButton.setCursor(
                 Cursor.getPredefinedCursor(
-                        Cursor.HAND_CURSOR
+                        engineModeDropdownButton.isEnabled()
+                                ? Cursor.HAND_CURSOR
+                                : Cursor.DEFAULT_CURSOR
                 )
         );
 
@@ -2426,6 +2481,44 @@ public class ChessWindow extends JFrame {
                 }
             }
         }
+    }
+
+
+    /**
+     * Setup and Endgame are dedicated workspaces, so the normal analysis-engine
+     * selector is intentionally disabled while either workspace owns the board.
+     */
+    private void setAnalysisEngineSelectorEnabled(
+            boolean enabled
+    ) {
+
+        if (engineModeDropdownButton == null) {
+            return;
+        }
+
+
+        if (!enabled
+                && engineModeMenu != null) {
+
+            engineModeMenu.setVisible(
+                    false
+            );
+        }
+
+
+        engineModeDropdownButton.setEnabled(
+                enabled
+        );
+
+
+        engineModeDropdownButton.setToolTipText(
+                enabled
+                        ? "Choose the analysis engine."
+                        : "Analysis-engine selection is unavailable in Setup and Endgame."
+        );
+
+
+        styleEngineSelectorButtons();
     }
 
 
@@ -4889,6 +4982,10 @@ public class ChessWindow extends JFrame {
 
     private void showEndgameCurriculum() {
 
+        piecePalettePanel.cancelActiveDrag();
+        setAnalysisEngineSelectorEnabled(false);
+
+
         /*
          * Preserve the original pre-M73 Setup layout exactly.
          *
@@ -6255,6 +6352,10 @@ public class ChessWindow extends JFrame {
             Position position,
             EndgameSettings settings
     ) {
+
+        piecePalettePanel.cancelActiveDrag();
+        setAnalysisEngineSelectorEnabled(false);
+
 
         endgameStudyMode =
                 true;
@@ -8240,6 +8341,7 @@ public class ChessWindow extends JFrame {
     private void revealEndgameAnalysis() {
 
         hideBoardLoading();
+        setAnalysisEngineSelectorEnabled(true);
 
         endgameStudyMode =
                 false;
@@ -8279,17 +8381,18 @@ public class ChessWindow extends JFrame {
     private void beginPositionSetup() {
 
         /*
-         * Setup normally begins from the position currently being viewed.
+         * Setup is a clean position-construction workspace. It always starts
+         * from the standard chess position, regardless of the position that was
+         * being viewed beforehand. This includes:
          *
-         * Endgame Curriculum is the one exception: its board is a temporary
-         * training position, not the user's ordinary analysis board. Entering
-         * Setup from Endgame should therefore present the normal full starting
-         * board rather than cloning the current sparse endgame study.
+         * - manual moves,
+         * - Dovetail/Hybrid selected continuations,
+         * - Stockfish continuations, and
+         * - Endgame Curriculum positions.
+         *
+         * The real board underneath Setup is still preserved by ChessBoardPanel,
+         * so Cancel can return to the user's pre-Setup analysis position.
          */
-        boolean setupOpenedFromEndgame =
-                endgameStudyMode;
-
-
         hideBoardLoading();
 
         endgameProofGeneration++;
@@ -8311,6 +8414,9 @@ public class ChessWindow extends JFrame {
                 true
         );
 
+
+        piecePalettePanel.cancelActiveDrag();
+        setAnalysisEngineSelectorEnabled(false);
 
 
         if (boardPanel.isSetupMode()) {
@@ -8334,16 +8440,9 @@ public class ChessWindow extends JFrame {
         analysisRequestId++;
 
 
-        if (setupOpenedFromEndgame) {
-
-            boardPanel.beginSetupMode(
-                    createStandardStartingPosition()
-            );
-
-        } else {
-
-            boardPanel.beginSetupMode();
-        }
+        boardPanel.beginSetupMode(
+                createStandardStartingPosition()
+        );
 
 
         piecePalettePanel.setVisible(
@@ -8404,12 +8503,16 @@ public class ChessWindow extends JFrame {
 
     private void cancelPositionSetup() {
 
+        piecePalettePanel.cancelActiveDrag();
+
+
         if (!boardPanel.isSetupMode()) {
             return;
         }
 
 
         boardPanel.cancelSetupMode();
+        setAnalysisEngineSelectorEnabled(true);
 
         updateBoardAreaInsetsForCurrentMode();
         updateApplicationHeaderBorderForCurrentMode();
@@ -8477,11 +8580,15 @@ public class ChessWindow extends JFrame {
 
     private void commitPositionSetup() {
 
+        piecePalettePanel.cancelActiveDrag();
+
+
         try {
 
             Position setupPosition =
                     boardPanel.finishSetupMode();
 
+            setAnalysisEngineSelectorEnabled(true);
             updateBoardAreaInsetsForCurrentMode();
             updateApplicationHeaderBorderForCurrentMode();
 
@@ -8863,6 +8970,49 @@ public class ChessWindow extends JFrame {
     }
 
 
+    private void returnToEngineHome() {
+
+        /*
+         * Engine Home is an unconditional navigation action rather than a
+         * confirmation-based Reset. It exits Setup/Endgame and returns the
+         * application to the normal engine workspace on the standard position.
+         * The user's selected analysis engine is preserved.
+         */
+        piecePalettePanel.cancelActiveDrag();
+
+
+        if (boardPanel.isSetupMode()) {
+            boardPanel.cancelSetupMode();
+        }
+
+
+        piecePalettePanel.setVisible(
+                false
+        );
+
+
+        if (setupPaletteHost != null) {
+            setupPaletteHost.setVisible(
+                    false
+            );
+        }
+
+
+        setupPanel.setVisible(
+                false
+        );
+
+
+        setAnalysisEngineSelectorEnabled(true);
+
+
+        loadFenPosition(
+                createStandardStartingPosition(),
+                true
+        );
+    }
+
+
     private void resetToStartingPosition() {
 
         int result =
@@ -9082,6 +9232,8 @@ public class ChessWindow extends JFrame {
 
 
         hideBoardLoading();
+        piecePalettePanel.cancelActiveDrag();
+        setAnalysisEngineSelectorEnabled(true);
 
         endgameProofGeneration++;
 

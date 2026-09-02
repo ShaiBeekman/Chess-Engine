@@ -17,6 +17,7 @@ import javax.swing.JWindow;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
+import java.awt.AWTEvent;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -28,7 +29,9 @@ import java.awt.Point;
 import java.awt.PointerInfo;
 import java.awt.RenderingHints;
 import java.awt.Window;
+import java.awt.Toolkit;
 
+import java.awt.event.AWTEventListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
@@ -63,6 +66,9 @@ public class PiecePalettePanel extends JPanel {
 
     private JWindow dragGhost;
     private SolidPieceLabel dragGhostLabel;
+    private boolean paletteDragActive;
+    private final AWTEventListener globalMouseReleaseListener;
+    private boolean globalMouseReleaseListenerInstalled;
 
 
     public PiecePalettePanel(
@@ -122,6 +128,40 @@ public class PiecePalettePanel extends JPanel {
 
         this.dragGhostLabel =
                 null;
+
+
+        this.paletteDragActive =
+                false;
+
+
+        this.globalMouseReleaseListener =
+                event -> {
+
+                    if (!(event instanceof MouseEvent mouseEvent)
+                            || mouseEvent.getID() != MouseEvent.MOUSE_RELEASED) {
+                        return;
+                    }
+
+
+                    /*
+                     * Let the button's own mouseReleased handler run first. If
+                     * an OS-level interruption (for example Print Screen) caused
+                     * that release to miss the button, this deferred fallback
+                     * still tears down the floating JWindow ghost.
+                     */
+                    SwingUtilities.invokeLater(
+                            () -> {
+
+                                if (paletteDragActive) {
+                                    cancelActiveDrag();
+                                }
+                            }
+                    );
+                };
+
+
+        this.globalMouseReleaseListenerInstalled =
+                false;
 
 
         setLayout(
@@ -205,6 +245,82 @@ public class PiecePalettePanel extends JPanel {
 
         this.cancelListener =
                 listener;
+    }
+
+
+    // =========================================================
+    // Drag lifecycle
+    // =========================================================
+
+    /**
+     * Cancel any in-progress palette drag and dispose the floating drag ghost.
+     * Safe to call repeatedly from Reset, Setup/Endgame transitions, and Home.
+     */
+    public void cancelActiveDrag() {
+
+        paletteDragActive =
+                false;
+
+
+        hideDragGhost();
+    }
+
+
+    @Override
+    public void setVisible(
+            boolean visible
+    ) {
+
+        if (!visible) {
+            cancelActiveDrag();
+        }
+
+
+        super.setVisible(
+                visible
+        );
+    }
+
+
+    @Override
+    public void addNotify() {
+
+        super.addNotify();
+
+
+        if (!globalMouseReleaseListenerInstalled) {
+
+            Toolkit.getDefaultToolkit()
+                    .addAWTEventListener(
+                            globalMouseReleaseListener,
+                            AWTEvent.MOUSE_EVENT_MASK
+                    );
+
+            globalMouseReleaseListenerInstalled =
+                    true;
+        }
+    }
+
+
+    @Override
+    public void removeNotify() {
+
+        cancelActiveDrag();
+
+
+        if (globalMouseReleaseListenerInstalled) {
+
+            Toolkit.getDefaultToolkit()
+                    .removeAWTEventListener(
+                            globalMouseReleaseListener
+                    );
+
+            globalMouseReleaseListenerInstalled =
+                    false;
+        }
+
+
+        super.removeNotify();
     }
 
 
@@ -444,8 +560,11 @@ public class PiecePalettePanel extends JPanel {
 
 
         clear.addActionListener(
-                event ->
-                        boardPanel.clearSetupBoard()
+                event -> {
+
+                    cancelActiveDrag();
+                    boardPanel.clearSetupBoard();
+                }
         );
 
 
@@ -463,7 +582,7 @@ public class PiecePalettePanel extends JPanel {
         cancel.addActionListener(
                 event -> {
 
-                    hideDragGhost();
+                    cancelActiveDrag();
 
                     if (cancelListener != null) {
 
@@ -487,7 +606,7 @@ public class PiecePalettePanel extends JPanel {
         analyze.addActionListener(
                 event -> {
 
-                    hideDragGhost();
+                    cancelActiveDrag();
 
                     if (analyzeListener != null) {
 
@@ -838,9 +957,6 @@ public class PiecePalettePanel extends JPanel {
         MouseAdapter drag =
                 new MouseAdapter() {
 
-                    private boolean pressed;
-
-
                     @Override
                     public void mousePressed(
                             MouseEvent event
@@ -854,7 +970,7 @@ public class PiecePalettePanel extends JPanel {
                         }
 
 
-                        pressed =
+                        paletteDragActive =
                                 true;
 
 
@@ -872,7 +988,7 @@ public class PiecePalettePanel extends JPanel {
                             MouseEvent event
                     ) {
 
-                        if (!pressed) {
+                        if (!paletteDragActive) {
                             return;
                         }
 
@@ -886,12 +1002,12 @@ public class PiecePalettePanel extends JPanel {
                             MouseEvent event
                     ) {
 
-                        if (!pressed) {
+                        if (!paletteDragActive) {
                             return;
                         }
 
 
-                        pressed =
+                        paletteDragActive =
                                 false;
 
 
@@ -918,7 +1034,7 @@ public class PiecePalettePanel extends JPanel {
                         }
 
 
-                        hideDragGhost();
+                        cancelActiveDrag();
                     }
                 };
 

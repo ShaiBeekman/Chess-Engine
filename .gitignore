@@ -36,3 +36,6 @@ src/main/java/chess/stockfish/stockfish.exe
 src/main/resources/tablebases/
 tablebases/
 tablebase-test-output/
+
+# Maven build output
+/target/

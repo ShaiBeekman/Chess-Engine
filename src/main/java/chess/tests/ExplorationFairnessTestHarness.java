@@ -17,9 +17,10 @@ import java.util.List;
  * Verifies persistent exploration-scheduler behavior:
  *
  * 1. scheduling state persists across advance() calls
- * 2. global round-robin work reaches every queued root branch
- * 3. focus gives extra work to the selected subtree
- * 4. focus never stops global exploration
+ * 2. the hybrid walker/coverage lanes remain balanced
+ * 3. coverage round-robin reaches every queued root branch
+ * 4. focus gives extra work to the selected subtree
+ * 5. focus never stops global exploration
  */
 public final class ExplorationFairnessTestHarness {
 
@@ -269,15 +270,30 @@ public final class ExplorationFairnessTestHarness {
 
 
         /*
-         * The scheduler's seed queue contains every already-generated
-         * expandable child of the fully expanded root.
+         * M69 is a hybrid scheduler:
          *
-         * With no focus active, one work unit per initial child is
-         * enough for every queued root branch to receive a turn before
-         * any requeued node can lap it.
+         *     walker, coverage, walker, coverage, ...
+         *
+         * PositionNode.expansionCount tracks the NODE-COVERAGE lane,
+         * not walker traversals.  Therefore one total scheduler work
+         * unit per root child is no longer enough to guarantee one
+         * coverage turn per root child.
+         *
+         * Two total work units per root child provide exactly one
+         * coverage-lane opportunity per initial branch while preserving
+         * the 50/50 hybrid schedule.
          */
         int requestedWork =
-                rootChildren.size();
+                rootChildren.size()
+                        * 2;
+
+
+        long coverageBefore =
+                fixture.scheduler.getCoverageSteps();
+
+
+        long walkerBefore =
+                fixture.scheduler.getWalkerSteps();
 
 
         int workDone =
@@ -286,10 +302,34 @@ public final class ExplorationFairnessTestHarness {
                 );
 
 
+        long coverageDelta =
+                fixture.scheduler.getCoverageSteps()
+                        - coverageBefore;
+
+
+        long walkerDelta =
+                fixture.scheduler.getWalkerSteps()
+                        - walkerBefore;
+
+
         expectEquals(
-                "Global scheduler completes one work unit per root branch",
+                "Hybrid scheduler completes requested work",
                 requestedWork,
                 workDone
+        );
+
+
+        expectEquals(
+                "Coverage lane receives one turn per initial root branch",
+                rootChildren.size(),
+                (int) coverageDelta
+        );
+
+
+        expectEquals(
+                "Walker lane remains equally represented",
+                rootChildren.size(),
+                (int) walkerDelta
         );
 
 

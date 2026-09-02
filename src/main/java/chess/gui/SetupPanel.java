@@ -6,6 +6,7 @@ import main.java.chess.model.Piece;
 import main.java.chess.model.PieceType;
 import main.java.chess.model.Position;
 import main.java.chess.model.Square;
+import main.java.chess.rules.AttackDetector;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -29,6 +30,10 @@ public class SetupPanel extends JPanel {
     private final JLabel blackMaterialValue;
     private final JLabel validationValue;
     private final JTextArea fenArea;
+    private final JButton analyzeButton;
+    private final AttackDetector attackDetector;
+
+    private Runnable analyzeListener;
 
     private java.awt.Color backgroundColor;
     private java.awt.Color primaryColor;
@@ -37,6 +42,9 @@ public class SetupPanel extends JPanel {
     private java.awt.Color controlColor;
 
     public SetupPanel() {
+
+        attackDetector =
+                new AttackDetector();
 
         setLayout(
                 new BorderLayout()
@@ -290,6 +298,56 @@ public class SetupPanel extends JPanel {
                 Box.createVerticalGlue()
         );
 
+        analyzeButton =
+                new JButton(
+                        "Analyze Position"
+                );
+
+        analyzeButton.setFont(
+                new Font(
+                        Font.SANS_SERIF,
+                        Font.BOLD,
+                        12
+                )
+        );
+
+        analyzeButton.setFocusPainted(
+                false
+        );
+
+        analyzeButton.setCursor(
+                Cursor.getPredefinedCursor(
+                        Cursor.HAND_CURSOR
+                )
+        );
+
+        analyzeButton.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        42
+                )
+        );
+
+        analyzeButton.setPreferredSize(
+                new Dimension(
+                        340,
+                        42
+                )
+        );
+
+        analyzeButton.addActionListener(
+                event -> {
+
+                    if (analyzeListener != null) {
+                        analyzeListener.run();
+                    }
+                }
+        );
+
+        content.add(
+                analyzeButton
+        );
+
         add(
                 content,
                 BorderLayout.CENTER
@@ -298,6 +356,14 @@ public class SetupPanel extends JPanel {
         applyTheme(
                 true
         );
+    }
+
+
+    public void setAnalyzeListener(
+            Runnable listener
+    ) {
+        analyzeListener =
+                listener;
     }
 
 
@@ -334,11 +400,21 @@ public class SetupPanel extends JPanel {
 
         String validation =
                 validationText(
-                        board
+                        board,
+                        sideToMove
                 );
 
         validationValue.setText(
                 validation
+        );
+
+        boolean valid =
+                validation.startsWith(
+                        "Ready"
+                );
+
+        analyzeButton.setEnabled(
+                valid
         );
 
         fenArea.setText(
@@ -401,6 +477,30 @@ public class SetupPanel extends JPanel {
 
         fenArea.setBackground(
                 controlColor
+        );
+
+        analyzeButton.setForeground(
+                primaryColor
+        );
+
+        analyzeButton.setBackground(
+                controlColor
+        );
+
+        analyzeButton.setBorder(
+                BorderFactory.createLineBorder(
+                        borderColor,
+                        1,
+                        true
+                )
+        );
+
+        analyzeButton.setOpaque(
+                true
+        );
+
+        analyzeButton.setContentAreaFilled(
+                true
         );
 
         repaint();
@@ -598,7 +698,8 @@ public class SetupPanel extends JPanel {
 
 
     private String validationText(
-            Board board
+            Board board,
+            Color sideToMove
     ) {
 
         int whiteKings =
@@ -687,6 +788,37 @@ public class SetupPanel extends JPanel {
 
                 return "Pawn cannot be on rank 1 or 8";
             }
+        }
+
+        Color actualSideToMove =
+                sideToMove == null
+                        ? Color.WHITE
+                        : sideToMove;
+
+        Color previousMover =
+                actualSideToMove.opposite();
+
+        Square previousKing =
+                findKing(
+                        board,
+                        previousMover
+                );
+
+        if (previousKing != null
+                && attackDetector.isSquareAttacked(
+                board,
+                previousKing,
+                actualSideToMove
+        )) {
+
+            return (previousMover == Color.WHITE
+                    ? "White"
+                    : "Black")
+                    + " king cannot already be in check when "
+                    + (actualSideToMove == Color.WHITE
+                    ? "White"
+                    : "Black")
+                    + " is to move";
         }
 
         return "Ready to analyze ✓";

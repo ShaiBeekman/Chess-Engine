@@ -104,6 +104,18 @@ public class PositionGraph {
      */
     private long totalStatisticsCacheInvalidations;
 
+    /*
+     * Live canonical-transposition telemetry.
+     *
+     * A transposition node is a canonical PositionNode with two or more
+     * distinct incoming parents. transpositionLinkCount counts only the
+     * extra parent links beyond the first one. Both counters are maintained
+     * incrementally when a new graph edge is committed, so reading live
+     * telemetry never requires scanning the entire graph.
+     */
+    private int transpositionNodeCount;
+    private long transpositionLinkCount;
+
     private static final int SNAPSHOT_PROFILE_INTERVAL = 20;
 
     private long profileSnapshotCount;
@@ -161,6 +173,12 @@ public class PositionGraph {
                 new HashSet<>();
 
         this.totalStatisticsCacheInvalidations =
+                0L;
+
+        this.transpositionNodeCount =
+                0;
+
+        this.transpositionLinkCount =
                 0L;
 
         resetSnapshotProfiler();
@@ -336,6 +354,48 @@ public class PositionGraph {
 
 
     // =========================================================
+    // INCOMING-PARENT / TRANSPOSITION ACCOUNTING
+    // =========================================================
+
+    private void recordIncomingParent(
+            PositionNode child,
+            PositionNode parent
+    ) {
+
+        int incomingBefore =
+                child.getIncomingNodeCount();
+
+
+        boolean added =
+                child.addIncomingNode(
+                        parent
+                );
+
+
+        if (!added) {
+
+            return;
+        }
+
+
+        /*
+         * The first incoming parent establishes an ordinary tree edge.
+         * Every later distinct parent is a canonical transposition merge.
+         */
+        if (incomingBefore >= 1) {
+
+            transpositionLinkCount++;
+
+
+            if (incomingBefore == 1) {
+
+                transpositionNodeCount++;
+            }
+        }
+    }
+
+
+    // =========================================================
     // BASIC GRAPH ACCESS
     // =========================================================
 
@@ -348,6 +408,18 @@ public class PositionGraph {
     public Collection<PositionNode> getNodes() {
 
         return nodes.values();
+    }
+
+
+    public int getTranspositionNodeCount() {
+
+        return transpositionNodeCount;
+    }
+
+
+    public long getTranspositionLinkCount() {
+
+        return transpositionLinkCount;
     }
 
 
@@ -820,7 +892,8 @@ public class PositionGraph {
          * PositionNode stores incoming parents in a Set, so repeated
          * traversal of an already-known edge is harmless.
          */
-        nextNode.addIncomingNode(
+        recordIncomingParent(
+                nextNode,
                 node
         );
 
@@ -3212,7 +3285,8 @@ public class PositionGraph {
             );
 
 
-            child.addIncomingNode(
+            recordIncomingParent(
+                    child,
                     parent
             );
 

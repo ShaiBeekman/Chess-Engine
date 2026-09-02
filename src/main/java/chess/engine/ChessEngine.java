@@ -15,6 +15,17 @@ import java.util.List;
 
 public class ChessEngine {
 
+    public static final String TELEMETRY_BUILD_ID =
+            "M70-LIVE-DOVETAIL-TELEMETRY-V1";
+
+    public static final String MODE_BUILD_ID =
+            "M71-SEPARATE-DOVETAIL-HYBRID-V1";
+
+    public enum SearchMode {
+        DOVETAIL,
+        HYBRID
+    }
+
     private final MoveGenerator moveGenerator;
 
     private int searchDepth;
@@ -29,6 +40,13 @@ public class ChessEngine {
     private PositionNode activeRoot;
 
     private ExplorationScheduler explorationScheduler;
+
+    /*
+     * Backward-compatible engine default remains HYBRID so existing non-GUI
+     * tests retain M69 behavior. ChessWindow explicitly selects DOVETAIL or
+     * HYBRID before starting a GUI analysis session.
+     */
+    private SearchMode searchMode;
 
 
     // =========================================================
@@ -45,6 +63,10 @@ public class ChessEngine {
     private long performanceBatchCount;
     private long performanceSnapshotCount;
     private long performanceWorkUnits;
+
+    /* Cumulative for the current active analysis; unlike the profiler window,
+     * this is never reset by periodic performance reports. */
+    private long totalExplorationWorkUnits;
 
     private long explorationNanos;
     private long outcomePropagationNanos;
@@ -82,6 +104,9 @@ public class ChessEngine {
 
         this.explorationScheduler =
                 null;
+
+        this.searchMode =
+                SearchMode.HYBRID;
 
 
         resetPerformanceWindow();
@@ -146,11 +171,101 @@ public class ChessEngine {
          * and remembers its position forever after.
          */
         explorationScheduler =
-                new ExplorationScheduler(
-                        activeGraph,
-                        moveGenerator,
-                        activeRoot
-                );
+                createExplorationScheduler();
+
+
+        return activeGraph.analyzePosition(
+                activeRoot
+        );
+    }
+
+
+    // =========================================================
+    // Reuse an already-known analysis root
+    // =========================================================
+
+    /**
+     * Analyze {@code position} without discarding the current graph when that
+     * position is already present in it.  This is used by GUI navigation such
+     * as Reset Position: returning to a previously explored root should not
+     * erase discoveries that were already paid for.
+     *
+     * If the position is not known to the current graph, this deliberately
+     * falls back to the normal fresh-analysis path.
+     */
+    public synchronized PositionAnalysis analyzePreservingGraphIfKnown(
+            Position position
+    ) {
+
+        if (position == null) {
+
+            throw new IllegalArgumentException(
+                    "Position cannot be null."
+            );
+        }
+
+
+        if (activeGraph == null
+                || activeRoot == null) {
+
+            return analyze(
+                    position
+            );
+        }
+
+
+        PositionNode knownNode =
+                null;
+
+        for (PositionNode node :
+                activeGraph.getNodes()) {
+
+            if (node.getKey()
+                    .equals(
+                            position.createPositionKey()
+                    )) {
+
+                knownNode =
+                        node;
+
+                break;
+            }
+        }
+
+
+        if (knownNode == null) {
+
+            return analyze(
+                    position
+            );
+        }
+
+
+        /*
+         * Usually Reset returns to the graph's existing original root, in
+         * which case the scheduler itself can continue untouched.  If a known
+         * non-root position is selected as the new analysis root, rebuild only
+         * the scheduler frontier from that node; the PositionGraph and every
+         * discovered PositionNode remain intact.
+         */
+        if (knownNode != activeRoot) {
+
+            activeRoot =
+                    knownNode;
+
+            explorationScheduler =
+                    createExplorationScheduler();
+
+        } else if (explorationScheduler == null) {
+
+            explorationScheduler =
+                    createExplorationScheduler();
+        }
+
+
+        clearExplorationFocus();
+
+        recalculateGraph();
 
 
         return activeGraph.analyzePosition(
@@ -181,6 +296,9 @@ public class ChessEngine {
                 null;
 
         resetPerformanceWindow();
+
+        totalExplorationWorkUnits =
+                0L;
     }
 
 
@@ -238,6 +356,9 @@ public class ChessEngine {
         performanceBatchCount++;
 
         performanceWorkUnits +=
+                workUnits;
+
+        totalExplorationWorkUnits +=
                 workUnits;
 
 
@@ -390,6 +511,18 @@ public class ChessEngine {
         ensureScheduler();
 
 
+        /*
+         * Pure Dovetail preserves its countable diagonal walker schedule.
+         * Selecting a GUI line is therefore view-only in DOVETAIL mode.
+         * HYBRID retains the selected-subtree bonus in its coverage lane.
+         */
+        if (searchMode == SearchMode.DOVETAIL) {
+
+            explorationScheduler.clearFocus();
+            return;
+        }
+
+
         if (position == null) {
 
             explorationScheduler.clearFocus();
@@ -450,11 +583,72 @@ public class ChessEngine {
         if (explorationScheduler == null) {
 
             explorationScheduler =
-                    new ExplorationScheduler(
-                            activeGraph,
-                            moveGenerator,
-                            activeRoot
-                    );
+                    createExplorationScheduler();
+        }
+    }
+
+
+    private ExplorationScheduler createExplorationScheduler() {
+
+        ExplorationScheduler.Mode schedulerMode =
+                searchMode == SearchMode.DOVETAIL
+                        ? ExplorationScheduler.Mode.DOVETAIL
+                        : ExplorationScheduler.Mode.HYBRID;
+
+
+        return new ExplorationScheduler(
+                activeGraph,
+                moveGenerator,
+                activeRoot,
+                schedulerMode
+        );
+    }
+
+
+    // =========================================================
+    // Search mode
+    // =========================================================
+
+    public synchronized SearchMode getSearchMode() {
+
+        return searchMode;
+    }
+
+
+    public synchronized void setSearchMode(
+            SearchMode searchMode
+    ) {
+
+        if (searchMode == null) {
+
+            throw new IllegalArgumentException(
+                    "Search mode cannot be null."
+            );
+        }
+
+
+        if (this.searchMode == searchMode) {
+
+            return;
+        }
+
+
+        this.searchMode =
+                searchMode;
+
+
+        /*
+         * Preserve the canonical graph if a caller changes policy in place,
+         * but restart scheduler state so the new mode begins cleanly.
+         * ChessWindow uses an even stronger session boundary and immediately
+         * starts a fresh root after changing modes.
+         */
+        if (activeGraph != null
+                &&
+                activeRoot != null) {
+
+            explorationScheduler =
+                    createExplorationScheduler();
         }
     }
 
@@ -831,6 +1025,127 @@ public class ChessEngine {
 
         performanceReportPending =
                 false;
+    }
+
+
+    // =========================================================
+    // Live search telemetry
+    // =========================================================
+
+    public synchronized SearchTelemetry getSearchTelemetry() {
+
+        int graphNodes =
+                activeGraph == null
+                        ? 0
+                        : activeGraph.size();
+
+
+        boolean searching =
+                explorationScheduler != null
+                        && explorationScheduler.hasGlobalWork();
+
+
+        long walkerSteps =
+                0L;
+
+        long coverageSteps =
+                0L;
+
+        int walkers =
+                0;
+
+        int activeWalkers =
+                0;
+
+        int maximumWalkerDepth =
+                0;
+
+        long walkerPathRevisits =
+                0L;
+
+        int globalQueueSize =
+                0;
+
+        int focusQueueSize =
+                0;
+
+
+        if (explorationScheduler != null) {
+
+            ExplorationScheduler.DovetailTelemetry dovetail =
+                    explorationScheduler.telemetry();
+
+
+            walkerSteps =
+                    dovetail.walkerSteps();
+
+            coverageSteps =
+                    dovetail.coverageSteps();
+
+            walkers =
+                    dovetail.walkers();
+
+            activeWalkers =
+                    dovetail.activeWalkers();
+
+            maximumWalkerDepth =
+                    dovetail.maximumWalkerDepth();
+
+            walkerPathRevisits =
+                    dovetail.walkerPathRevisits();
+
+            globalQueueSize =
+                    explorationScheduler.getGlobalQueueSize();
+
+            focusQueueSize =
+                    explorationScheduler.getFocusQueueSize();
+        }
+
+
+        int transpositionNodes =
+                activeGraph == null
+                        ? 0
+                        : activeGraph.getTranspositionNodeCount();
+
+        long transpositionLinks =
+                activeGraph == null
+                        ? 0L
+                        : activeGraph.getTranspositionLinkCount();
+
+
+        return new SearchTelemetry(
+                searching,
+                graphNodes,
+                totalExplorationWorkUnits,
+                walkerSteps,
+                coverageSteps,
+                walkers,
+                activeWalkers,
+                maximumWalkerDepth,
+                walkerPathRevisits,
+                transpositionNodes,
+                transpositionLinks,
+                globalQueueSize,
+                focusQueueSize
+        );
+    }
+
+
+    public record SearchTelemetry(
+            boolean searching,
+            int graphNodes,
+            long workUnits,
+            long walkerSteps,
+            long coverageSteps,
+            int walkers,
+            int activeWalkers,
+            int maximumWalkerDepth,
+            long walkerPathRevisits,
+            int transpositionNodes,
+            long transpositionLinks,
+            int globalQueueSize,
+            int focusQueueSize
+    ) {
     }
 
 

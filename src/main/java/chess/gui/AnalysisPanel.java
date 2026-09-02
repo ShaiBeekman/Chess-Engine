@@ -4,6 +4,7 @@ import main.java.chess.analysis.MoveAnalysis;
 import main.java.chess.analysis.PositionAnalysis;
 import main.java.chess.analysis.VariationNode;
 import main.java.chess.model.Position;
+import main.java.chess.model.Color;
 import main.java.chess.search.SearchOutcome;
 
 import javax.swing.*;
@@ -161,6 +162,47 @@ public class AnalysisPanel extends JPanel {
 
     private final JButton backButton;
 
+    private final JLabel searchTelemetryLabel;
+    private final JLabel searchLaneTelemetryLabel;
+    private final JLabel searchStructureTelemetryLabel;
+    private final JLabel searchGraphTelemetryLabel;
+
+    private final JPanel searchVisualizationPanel;
+    private final JLabel globalSearchLabel;
+    private final JProgressBar globalActivityBar;
+    private final JLabel focusSearchLabel;
+    private final JProgressBar focusActivityBar;
+    private final JButton searchControlButton;
+    private final JButton newAnalysisButton;
+
+
+    private final JPanel stockfishPanel;
+    private final JLabel stockfishHeadingLabel;
+    private final JLabel stockfishStatusLabel;
+    private final JLabel stockfishSummaryLabel;
+    private final JLabel stockfishPvLabel;
+
+    private String telemetrySearchMode;
+    private boolean telemetrySearching;
+    private int telemetryGraphNodes;
+    private long telemetryWorkUnits;
+    private long telemetryWalkerSteps;
+    private long telemetryCoverageSteps;
+    private int telemetryWalkers;
+    private int telemetryActiveWalkers;
+    private int telemetryMaximumWalkerDepth;
+    private long telemetryWalkerPathRevisits;
+    private int telemetryTranspositionNodes;
+    private long telemetryTranspositionLinks;
+    private int telemetryGlobalQueueSize;
+    private int telemetryFocusQueueSize;
+    private boolean telemetryFocused;
+    private List<String> telemetryFocusPath;
+    private boolean telemetryWorkAvailable;
+    private boolean telemetryPaused;
+
+    /* M68A: move-impact signs follow the board orientation. */
+    private boolean blackPerspective;
 
 
     // =========================================================
@@ -189,6 +231,14 @@ public class AnalysisPanel extends JPanel {
 
     private final List<PathEntry> path;
 
+    /*
+     * Snapshot of the deepest move-panel path most recently clicked by the
+     * user.  Arrow-key navigation changes only the visible preview path;
+     * committed game history remains untouched.
+     */
+    private final List<PathEntry> keyboardPathSnapshot;
+    private int keyboardPathFloorDepth;
+
 
     // =========================================================
     // Callbacks
@@ -209,6 +259,9 @@ public class AnalysisPanel extends JPanel {
 
 
     private Runnable backListener;
+    private Runnable searchControlListener;
+    private Runnable newAnalysisListener;
+    private Runnable pathCollapseListener;
 
 
     // =========================================================
@@ -238,6 +291,12 @@ public class AnalysisPanel extends JPanel {
         path =
                 new ArrayList<>();
 
+        keyboardPathSnapshot =
+                new ArrayList<>();
+
+        keyboardPathFloorDepth =
+                0;
+
 
         JPanel northPanel =
                 new JPanel();
@@ -258,9 +317,9 @@ public class AnalysisPanel extends JPanel {
 
         northPanel.setBorder(
                 BorderFactory.createEmptyBorder(
-                        18,
-                        18,
                         12,
+                        18,
+                        8,
                         18
                 )
         );
@@ -376,6 +435,11 @@ public class AnalysisPanel extends JPanel {
         );
 
 
+        evaluationLabel.setToolTipText(
+                "The engine's current value after considering positions discovered by the search."
+        );
+
+
         breadcrumbLabel =
                 new JLabel(
                         "Start"
@@ -393,6 +457,387 @@ public class AnalysisPanel extends JPanel {
                         Font.PLAIN,
                         12
                 )
+        );
+
+
+        telemetrySearchMode =
+                "DOVETAIL";
+
+        telemetrySearching =
+                false;
+
+        telemetryGraphNodes =
+                0;
+
+        telemetryWorkUnits =
+                0L;
+
+        telemetryWalkerSteps =
+                0L;
+
+        telemetryCoverageSteps =
+                0L;
+
+        telemetryWalkers =
+                0;
+
+        telemetryActiveWalkers =
+                0;
+
+        telemetryMaximumWalkerDepth =
+                0;
+
+        telemetryWalkerPathRevisits =
+                0L;
+
+        telemetryTranspositionNodes =
+                0;
+
+        telemetryTranspositionLinks =
+                0L;
+
+        telemetryGlobalQueueSize =
+                0;
+
+        telemetryFocusQueueSize =
+                0;
+
+        telemetryFocused =
+                false;
+
+        telemetryFocusPath =
+                List.of();
+
+        telemetryWorkAvailable =
+                false;
+
+        telemetryPaused =
+                false;
+
+        blackPerspective =
+                false;
+
+
+        searchVisualizationPanel =
+                new JPanel();
+
+        searchVisualizationPanel.setOpaque(
+                false
+        );
+
+        searchVisualizationPanel.setLayout(
+                new BoxLayout(
+                        searchVisualizationPanel,
+                        BoxLayout.Y_AXIS
+                )
+        );
+
+        searchVisualizationPanel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        globalSearchLabel =
+                new JLabel(
+                        "GLOBAL EXPLORATION  •  IDLE"
+                );
+
+        globalSearchLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        globalSearchLabel.setFont(
+                new Font(
+                        Font.SANS_SERIF,
+                        Font.BOLD,
+                        10
+                )
+        );
+
+        globalSearchLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        globalActivityBar =
+                createSearchActivityBar();
+
+
+        focusSearchLabel =
+                new JLabel(
+                        "SELECTED LINE  •  NO FOCUS"
+                );
+
+        focusSearchLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        focusSearchLabel.setFont(
+                new Font(
+                        Font.SANS_SERIF,
+                        Font.BOLD,
+                        10
+                )
+        );
+
+        focusSearchLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        focusActivityBar =
+                createSearchActivityBar();
+
+
+        searchTelemetryLabel =
+                new JLabel(
+                        "SEARCH IDLE  •  0 nodes  •  0 work units"
+                );
+
+        searchTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchTelemetryLabel.setFont(
+                new Font(
+                        Font.MONOSPACED,
+                        Font.PLAIN,
+                        11
+                )
+        );
+
+        searchTelemetryLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        searchLaneTelemetryLabel =
+                new JLabel(
+                        "LINE WALKERS  0  •  NODE COVERAGE  0"
+                );
+
+        searchLaneTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchLaneTelemetryLabel.setFont(
+                new Font(
+                        Font.MONOSPACED,
+                        Font.PLAIN,
+                        10
+                )
+        );
+
+        searchLaneTelemetryLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+        searchLaneTelemetryLabel.setToolTipText(
+                "The two persistent M69 search lanes: diagonal line walkers and fair node/edge coverage."
+        );
+
+
+        searchStructureTelemetryLabel =
+                new JLabel(
+                        "WALKERS  0/0  •  DEPTH  0"
+                );
+
+        searchStructureTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchStructureTelemetryLabel.setFont(
+                new Font(
+                        Font.MONOSPACED,
+                        Font.PLAIN,
+                        10
+                )
+        );
+
+        searchStructureTelemetryLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+        searchStructureTelemetryLabel.setToolTipText(
+                "Active walkers / total walkers and the deepest persistent walker line."
+        );
+
+
+        searchGraphTelemetryLabel =
+                new JLabel(
+                        "TRANSPOSITIONS  0  •  REVISITS  0"
+                );
+
+        searchGraphTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchGraphTelemetryLabel.setFont(
+                new Font(
+                        Font.MONOSPACED,
+                        Font.PLAIN,
+                        10
+                )
+        );
+
+        searchGraphTelemetryLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+        searchGraphTelemetryLabel.setToolTipText(
+                "Canonical transposition merges and same-walker path revisits."
+        );
+
+
+        searchControlButton =
+                createSearchControlButton();
+
+        newAnalysisButton =
+                createNewAnalysisButton();
+
+
+
+        stockfishHeadingLabel =
+                new JLabel(
+                        "STOCKFISH REFERENCE"
+                );
+
+        stockfishStatusLabel =
+                new JLabel(
+                        "Reference engine idle"
+                );
+
+        stockfishSummaryLabel =
+                new JLabel(
+                        "Evaluation  —   •   Best move  —"
+                );
+
+        stockfishPvLabel =
+                new JLabel(
+                        "Suggested line  —"
+                );
+
+        stockfishPanel =
+                createStockfishPanel();
+
+        /*
+         * BoxLayout otherwise allows this reference card to greedily expand
+         * vertically. Keep the normal reference compact so the candidate
+         * list remains the visual focus.
+         */
+        setStockfishPanelCompactHeight(
+                86
+        );
+
+
+        searchVisualizationPanel.add(
+                globalSearchLabel
+        );
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        4
+                )
+        );
+
+        searchVisualizationPanel.add(
+                globalActivityBar
+        );
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        8
+                )
+        );
+
+        searchVisualizationPanel.add(
+                focusSearchLabel
+        );
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        4
+                )
+        );
+
+        searchVisualizationPanel.add(
+                focusActivityBar
+        );
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        6
+                )
+        );
+
+        searchVisualizationPanel.add(
+                searchTelemetryLabel
+        );
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        3
+                )
+        );
+
+        searchVisualizationPanel.add(
+                searchLaneTelemetryLabel
+        );
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        2
+                )
+        );
+
+        searchVisualizationPanel.add(
+                searchStructureTelemetryLabel
+        );
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        2
+                )
+        );
+
+        searchVisualizationPanel.add(
+                searchGraphTelemetryLabel
+        );
+
+
+        searchVisualizationPanel.add(
+                Box.createVerticalStrut(
+                        8
+                )
+        );
+
+        JPanel searchControlsRow =
+                new JPanel(
+                        new FlowLayout(
+                                FlowLayout.LEFT,
+                                8,
+                                0
+                        )
+                );
+
+        searchControlsRow.setOpaque(
+                false
+        );
+
+        searchControlsRow.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+        searchControlsRow.add(
+                searchControlButton
+        );
+
+        searchControlsRow.add(
+                newAnalysisButton
+        );
+
+        searchVisualizationPanel.add(
+                searchControlsRow
         );
 
 
@@ -427,13 +872,25 @@ public class AnalysisPanel extends JPanel {
 
         headingText.add(
                 Box.createVerticalStrut(
-                        7
+                        4
                 )
         );
 
 
         headingText.add(
                 breadcrumbLabel
+        );
+
+
+        headingText.add(
+                Box.createVerticalStrut(
+                        7
+                )
+        );
+
+
+        headingText.add(
+                searchVisualizationPanel
         );
 
 
@@ -450,7 +907,19 @@ public class AnalysisPanel extends JPanel {
 
         northPanel.add(
                 Box.createVerticalStrut(
-                        14
+                        5
+                )
+        );
+
+
+        northPanel.add(
+                stockfishPanel
+        );
+
+
+        northPanel.add(
+                Box.createVerticalStrut(
+                        5
                 )
         );
 
@@ -476,6 +945,20 @@ public class AnalysisPanel extends JPanel {
 
         principalVariationPanel =
                 createPrincipalVariationPanel();
+
+        principalVariationPanel.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        58
+                )
+        );
+
+        principalVariationPanel.setPreferredSize(
+                new Dimension(
+                        450,
+                        54
+                )
+        );
 
 
         northPanel.add(
@@ -748,6 +1231,489 @@ public class AnalysisPanel extends JPanel {
 
 
     // =========================================================
+    // Stockfish reference
+    // =========================================================
+
+    private JPanel createStockfishPanel() {
+
+        JPanel outer =
+                new JPanel(
+                        new BorderLayout()
+                );
+
+        outer.setBackground(
+                CARD_BACKGROUND
+        );
+
+        outer.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+        outer.setBorder(
+                createCardBorder()
+        );
+
+
+        JPanel content =
+                new JPanel();
+
+        content.setOpaque(
+                false
+        );
+
+        content.setLayout(
+                new BoxLayout(
+                        content,
+                        BoxLayout.Y_AXIS
+                )
+        );
+
+        content.setBorder(
+                BorderFactory.createEmptyBorder(
+                        6,
+                        12,
+                        6,
+                        12
+                )
+        );
+
+
+        stockfishHeadingLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishHeadingLabel.setFont(
+                new Font(
+                        Font.SANS_SERIF,
+                        Font.BOLD,
+                        11
+                )
+        );
+
+        stockfishHeadingLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        stockfishStatusLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishStatusLabel.setFont(
+                new Font(
+                        Font.MONOSPACED,
+                        Font.PLAIN,
+                        10
+                )
+        );
+
+        stockfishStatusLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        stockfishSummaryLabel.setForeground(
+                PRIMARY_TEXT
+        );
+
+        stockfishSummaryLabel.setFont(
+                new Font(
+                        Font.MONOSPACED,
+                        Font.BOLD,
+                        11
+                )
+        );
+
+        stockfishSummaryLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        stockfishPvLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishPvLabel.setFont(
+                new Font(
+                        Font.MONOSPACED,
+                        Font.PLAIN,
+                        10
+                )
+        );
+
+        stockfishPvLabel.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+
+        content.add(
+                stockfishHeadingLabel
+        );
+
+        content.add(
+                Box.createVerticalStrut(
+                        3
+                )
+        );
+
+        content.add(
+                stockfishStatusLabel
+        );
+
+        content.add(
+                Box.createVerticalStrut(
+                        3
+                )
+        );
+
+        content.add(
+                stockfishSummaryLabel
+        );
+
+        content.add(
+                Box.createVerticalStrut(
+                        3
+                )
+        );
+
+        content.add(
+                stockfishPvLabel
+        );
+
+
+        outer.add(
+                content,
+                BorderLayout.CENTER
+        );
+
+        return outer;
+    }
+
+
+    private void setStockfishPanelCompactHeight(
+            int height
+    ) {
+
+        int safeHeight =
+                Math.max(
+                        42,
+                        height
+                );
+
+        stockfishPanel.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        safeHeight
+                )
+        );
+
+        stockfishPanel.setPreferredSize(
+                new Dimension(
+                        450,
+                        safeHeight
+                )
+        );
+
+        stockfishPanel.revalidate();
+    }
+
+
+    public void setStockfishIdle(
+            String message
+    ) {
+
+        setStockfishPanelCompactHeight(
+                86
+        );
+
+        stockfishStatusLabel.setToolTipText(
+                null
+        );
+
+
+        stockfishSummaryLabel.setVisible(
+                true
+        );
+
+        stockfishPvLabel.setVisible(
+                true
+        );
+
+
+        stockfishStatusLabel.setText(
+                message == null
+                        || message.isBlank()
+                        ? "Reference engine idle"
+                        : message
+        );
+
+        stockfishStatusLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishSummaryLabel.setText(
+                "Evaluation  —   •   Best move  —"
+        );
+
+        stockfishPvLabel.setText(
+                "Suggested line  —"
+        );
+    }
+
+
+    public void setStockfishAnalyzing(
+            int requestedDepth
+    ) {
+
+        setStockfishPanelCompactHeight(
+                86
+        );
+
+        stockfishStatusLabel.setToolTipText(
+                null
+        );
+
+
+        stockfishSummaryLabel.setVisible(
+                true
+        );
+
+        stockfishPvLabel.setVisible(
+                true
+        );
+
+
+        stockfishStatusLabel.setText(
+                "Analyzing viewed position  •  target depth "
+                        + requestedDepth
+        );
+
+        stockfishStatusLabel.setForeground(
+                ACCENT
+        );
+
+        stockfishSummaryLabel.setText(
+                "Evaluation  …   •   Best move  …"
+        );
+
+        stockfishPvLabel.setText(
+                "Suggested line  calculating…"
+        );
+    }
+
+
+    public void setStockfishUnavailable(
+            String message
+    ) {
+
+        /*
+         * Unavailable reference information should take only one compact
+         * status row. This gives the candidate list roughly another half-card
+         * of visible height in the ordinary maximized window.
+         */
+        setStockfishPanelCompactHeight(
+                48
+        );
+
+        /*
+         * When the reference engine is unavailable, do not spend precious
+         * vertical space on two empty placeholder rows. The full card returns
+         * automatically as soon as Stockfish is analyzing again.
+         */
+        stockfishSummaryLabel.setVisible(
+                false
+        );
+
+        stockfishPvLabel.setVisible(
+                false
+        );
+
+
+        String detail =
+                message == null
+                        || message.isBlank()
+                        ? "No reference engine configured"
+                        : message;
+
+
+        String visibleDetail =
+                detail.length() <= 96
+                        ? detail
+                        : detail.substring(
+                        0,
+                        93
+                )
+                        + "…";
+
+
+        stockfishStatusLabel.setText(
+                "Unavailable  •  "
+                        + visibleDetail
+        );
+
+        stockfishStatusLabel.setToolTipText(
+                detail
+        );
+
+        stockfishStatusLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishSummaryLabel.setText(
+                "Evaluation  —   •   Best move  —"
+        );
+
+        stockfishPvLabel.setText(
+                "Suggested line  —"
+        );
+    }
+
+
+    public void setStockfishAnalysis(
+            String engineName,
+            int depth,
+            String scoreDisplay,
+            String bestMove,
+            long nodes,
+            long nps,
+            List<String> principalVariation
+    ) {
+
+        setStockfishPanelCompactHeight(
+                86
+        );
+
+        stockfishStatusLabel.setToolTipText(
+                null
+        );
+
+
+        stockfishSummaryLabel.setVisible(
+                true
+        );
+
+        stockfishPvLabel.setVisible(
+                true
+        );
+
+
+        String resolvedName =
+                engineName == null
+                        || engineName.isBlank()
+                        ? "Stockfish"
+                        : engineName;
+
+        String score =
+                scoreDisplay == null
+                        || scoreDisplay.isBlank()
+                        ? "—"
+                        : scoreDisplay;
+
+        String move =
+                bestMove == null
+                        || bestMove.isBlank()
+                        ? "—"
+                        : bestMove;
+
+
+        stockfishStatusLabel.setText(
+                resolvedName
+                        + "  •  depth "
+                        + Math.max(
+                        0,
+                        depth
+                )
+                        + "  •  "
+                        + formatCount(
+                        nodes
+                )
+                        + " nodes  •  "
+                        + formatCount(
+                        nps
+                )
+                        + " nps"
+        );
+
+        stockfishStatusLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishSummaryLabel.setText(
+                "Evaluation  "
+                        + score
+                        + "   •   Best move  "
+                        + move
+        );
+
+
+        String pv =
+                principalVariation == null
+                        || principalVariation.isEmpty()
+                        ? "—"
+                        : String.join(
+                        " ",
+                        principalVariation
+                );
+
+        String visiblePv =
+                pv.length() <= 96
+                        ? pv
+                        : pv.substring(
+                        0,
+                        93
+                )
+                        + "…";
+
+        stockfishPvLabel.setText(
+                "Suggested line  "
+                        + visiblePv
+        );
+
+        stockfishPvLabel.setToolTipText(
+                "Stockfish evaluation names the advantaged side explicitly. "
+                        + "The suggested line is displayed in standard algebraic notation (SAN)."
+        );
+    }
+
+
+    private String formatCount(
+            long count
+    ) {
+
+        if (count < 0L) {
+
+            return "—";
+        }
+
+        return String.format(
+                java.util.Locale.ROOT,
+                "%,d",
+                count
+        );
+    }
+
+
+    private String escapeHtml(
+            String text
+    ) {
+
+        return text
+                .replace(
+                        "&",
+                        "&amp;"
+                )
+                .replace(
+                        "<",
+                        "&lt;"
+                )
+                .replace(
+                        ">",
+                        "&gt;"
+                );
+    }
+
+
+    // =========================================================
     // Principal variation
     // =========================================================
 
@@ -793,9 +1759,9 @@ public class AnalysisPanel extends JPanel {
 
         content.setBorder(
                 BorderFactory.createEmptyBorder(
-                        10,
+                        5,
                         12,
-                        10,
+                        5,
                         12
                 )
         );
@@ -803,7 +1769,7 @@ public class AnalysisPanel extends JPanel {
 
         JLabel heading =
                 new JLabel(
-                        "PRINCIPAL VARIATION"
+                        "SUGGESTED LINE"
                 );
 
 
@@ -838,7 +1804,7 @@ public class AnalysisPanel extends JPanel {
 
         content.add(
                 Box.createVerticalStrut(
-                        7
+                        3
                 )
         );
 
@@ -1084,7 +2050,7 @@ public class AnalysisPanel extends JPanel {
         if (path.isEmpty()) {
 
             addSectionHeading(
-                    "CANDIDATE MOVES",
+                    "DOVETAIL ENGINE CANDIDATE MOVES",
                     0
             );
 
@@ -1093,8 +2059,39 @@ public class AnalysisPanel extends JPanel {
                     1;
 
 
+            List<MoveAnalysis> rankedRootMoves =
+                    new ArrayList<>(
+                            currentAnalysis.getMoves()
+                    );
+
+            /*
+             * M68A2 display contract:
+             * candidate ranking, move impact, the header evaluation,
+             * and the evaluation bar all use the same direct position
+             * evaluation. Search values remain internal search guidance.
+             */
+            if (!rankedRootMoves.isEmpty()) {
+                boolean whiteToMove =
+                        rankedRootMoves.get(0)
+                                .getPosition()
+                                .getSideToMove() == Color.BLACK;
+
+                rankedRootMoves.sort(
+                        (left, right) ->
+                                whiteToMove
+                                        ? Integer.compare(
+                                        right.getEvaluation(),
+                                        left.getEvaluation()
+                                )
+                                        : Integer.compare(
+                                        left.getEvaluation(),
+                                        right.getEvaluation()
+                                )
+                );
+            }
+
             for (MoveAnalysis move :
-                    currentAnalysis.getMoves()) {
+                    rankedRootMoves) {
 
                 int moveRank =
                         rank;
@@ -1104,8 +2101,9 @@ public class AnalysisPanel extends JPanel {
                         new AnalysisCard(
                                 move.getPosition(),
 
-                                moveRank
-                                        + ". "
+                                "#"
+                                        + moveRank
+                                        + "  "
                                         + move.getSan(),
 
                                 move.getOutcome(),
@@ -1117,6 +2115,8 @@ public class AnalysisPanel extends JPanel {
                                 move.getEvaluation(),
 
                                 move.getSearchValue(),
+
+                                currentAnalysis.getEvaluation(),
 
                                 move.getGeneratedPositions(),
 
@@ -1226,6 +2226,10 @@ public class AnalysisPanel extends JPanel {
 
                                 move.getSearchValue(),
 
+                                depth == 0
+                                        ? currentAnalysis.getEvaluation()
+                                        : path.get(depth - 1).getEvaluation(),
+
                                 move.getGeneratedPositions(),
 
                                 move.getExploredPositions(),
@@ -1267,6 +2271,10 @@ public class AnalysisPanel extends JPanel {
 
                                 variation.getSearchValue(),
 
+                                depth == 0
+                                        ? currentAnalysis.getEvaluation()
+                                        : path.get(depth - 1).getEvaluation(),
+
                                 variation.getGeneratedPositions(),
 
                                 variation.getExploredPositions(),
@@ -1280,6 +2288,17 @@ public class AnalysisPanel extends JPanel {
                                 endpoint
                         );
             }
+
+
+            final int collapseDepth =
+                    depth;
+
+
+            selectedCard.setClickAction(
+                    () -> collapsePathFromDepth(
+                            collapseDepth
+                    )
+            );
 
 
             selectedCard.setSelected(
@@ -1346,8 +2365,33 @@ public class AnalysisPanel extends JPanel {
                     path.size();
 
 
+            List<VariationNode> rankedChildren =
+                    new ArrayList<>(
+                            children
+                    );
+
+            if (!rankedChildren.isEmpty()) {
+                boolean whiteToMove =
+                        rankedChildren.get(0)
+                                .getPosition()
+                                .getSideToMove() == Color.BLACK;
+
+                rankedChildren.sort(
+                        (left, right) ->
+                                whiteToMove
+                                        ? Integer.compare(
+                                        right.getStaticEvaluation(),
+                                        left.getStaticEvaluation()
+                                )
+                                        : Integer.compare(
+                                        left.getStaticEvaluation(),
+                                        right.getStaticEvaluation()
+                                )
+                );
+            }
+
             for (VariationNode child :
-                    children) {
+                    rankedChildren) {
 
                 AnalysisCard card =
                         new AnalysisCard(
@@ -1366,6 +2410,8 @@ public class AnalysisPanel extends JPanel {
                                 child.getStaticEvaluation(),
 
                                 child.getSearchValue(),
+
+                                current.getEvaluation(),
 
                                 child.getGeneratedPositions(),
 
@@ -1448,7 +2494,7 @@ public class AnalysisPanel extends JPanel {
             wrapper.setMaximumSize(
                     new Dimension(
                             Integer.MAX_VALUE,
-                            218
+                            178
                     )
             );
 
@@ -1467,7 +2513,7 @@ public class AnalysisPanel extends JPanel {
 
         cardsPanel.add(
                 Box.createVerticalStrut(
-                        10
+                        6
                 )
         );
     }
@@ -1567,6 +2613,41 @@ public class AnalysisPanel extends JPanel {
 
 
     // =========================================================
+    // Collapse selected path from one level downward
+    // =========================================================
+
+    private void collapsePathFromDepth(
+            int depth
+    ) {
+
+        if (depth < 0
+                || depth >= path.size()) {
+
+            return;
+        }
+
+
+        while (path.size() > depth) {
+
+            path.remove(
+                    path.size() - 1
+            );
+        }
+
+
+        updateBreadcrumb();
+        restoreHeaderForCurrentPath();
+        rebuildVerticalDisplay();
+
+
+        if (pathCollapseListener != null) {
+
+            pathCollapseListener.run();
+        }
+    }
+
+
+    // =========================================================
     // Back one level
     // =========================================================
 
@@ -1588,6 +2669,152 @@ public class AnalysisPanel extends JPanel {
 
         restoreHeaderForCurrentPath();
 
+
+        rebuildVerticalDisplay();
+    }
+
+
+    // =========================================================
+    // Move-panel arrow-key preview navigation
+    // =========================================================
+
+    /**
+     * Arm keyboard navigation for the currently selected move-panel path.
+     *
+     * floorDepth is the shallowest selected-path depth that Left/Up may
+     * reach. ChessWindow supplies the committed-prefix depth, so keyboard
+     * preview navigation never deletes committed game history.
+     */
+    public void armKeyboardPathNavigation(
+            int floorDepth
+    ) {
+
+        keyboardPathSnapshot.clear();
+        keyboardPathSnapshot.addAll(
+                path
+        );
+
+        keyboardPathFloorDepth =
+                Math.max(
+                        0,
+                        Math.min(
+                                floorDepth,
+                                keyboardPathSnapshot.size()
+                        )
+                );
+    }
+
+
+    public void clearKeyboardPathNavigation() {
+
+        keyboardPathSnapshot.clear();
+        keyboardPathFloorDepth =
+                0;
+    }
+
+
+    public boolean hasKeyboardPathNavigation() {
+
+        return !keyboardPathSnapshot.isEmpty();
+    }
+
+
+    public boolean keyboardPathPrevious() {
+
+        if (path.size()
+                <= keyboardPathFloorDepth) {
+
+            return false;
+        }
+
+        path.remove(
+                path.size() - 1
+        );
+
+        refreshAfterKeyboardPathNavigation();
+
+        return true;
+    }
+
+
+    public boolean keyboardPathNext() {
+
+        if (keyboardPathSnapshot.isEmpty()
+                ||
+                path.size()
+                        >= keyboardPathSnapshot.size()) {
+
+            return false;
+        }
+
+        path.add(
+                keyboardPathSnapshot.get(
+                        path.size()
+                )
+        );
+
+        refreshAfterKeyboardPathNavigation();
+
+        return true;
+    }
+
+
+    public boolean keyboardPathReset() {
+
+        if (path.size()
+                <= keyboardPathFloorDepth) {
+
+            return false;
+        }
+
+        while (path.size()
+                > keyboardPathFloorDepth) {
+
+            path.remove(
+                    path.size() - 1
+            );
+        }
+
+        refreshAfterKeyboardPathNavigation();
+
+        return true;
+    }
+
+
+    public boolean keyboardPathRestore() {
+
+        if (keyboardPathSnapshot.isEmpty()
+                ||
+                path.size()
+                        >= keyboardPathSnapshot.size()) {
+
+            return false;
+        }
+
+        while (path.size()
+                < keyboardPathSnapshot.size()) {
+
+            path.add(
+                    keyboardPathSnapshot.get(
+                            path.size()
+                    )
+            );
+        }
+
+        refreshAfterKeyboardPathNavigation();
+
+        return true;
+    }
+
+
+    private void refreshAfterKeyboardPathNavigation() {
+
+        updateBreadcrumb();
+        restoreHeaderForCurrentPath();
+
+        backButton.setEnabled(
+                !path.isEmpty()
+        );
 
         rebuildVerticalDisplay();
     }
@@ -1973,6 +3200,24 @@ public class AnalysisPanel extends JPanel {
     }
 
 
+    public int getSelectedEvaluation() {
+
+        if (path.isEmpty()) {
+
+            return currentAnalysis == null
+                    ? 0
+                    : currentAnalysis.getEvaluation();
+        }
+
+
+        return path
+                .get(
+                        path.size() - 1
+                )
+                .getEvaluation();
+    }
+
+
     public SearchOutcome getSelectedOutcome() {
 
         if (path.isEmpty()) {
@@ -2069,7 +3314,7 @@ public class AnalysisPanel extends JPanel {
             result.add(
                     new PreviewData(
                             entry.getPosition(),
-                            entry.getSearchValue(),
+                            entry.getEvaluation(),
                             entry.getOutcome(),
                             entry.getMateDistance()
                     )
@@ -2469,7 +3714,7 @@ public class AnalysisPanel extends JPanel {
         evaluationLabel.setText(
                 "Evaluation  "
                         + formatEvaluation(
-                        move.getSearchValue()
+                        move.getEvaluation()
                 )
         );
     }
@@ -2495,7 +3740,7 @@ public class AnalysisPanel extends JPanel {
         evaluationLabel.setText(
                 "Evaluation  "
                         + formatEvaluation(
-                        variation.getSearchValue()
+                        variation.getStaticEvaluation()
                 )
         );
     }
@@ -2527,7 +3772,7 @@ public class AnalysisPanel extends JPanel {
             evaluationLabel.setText(
                     "Evaluation  "
                             + formatEvaluation(
-                            currentAnalysis.getSearchValue()
+                            currentAnalysis.getEvaluation()
                     )
             );
 
@@ -2847,28 +4092,725 @@ public class AnalysisPanel extends JPanel {
     }
 
 
+    private JButton createSearchControlButton() {
+
+        JButton button =
+                new JButton(
+                        "Pause Search"
+                );
+
+        button.setFont(
+                new Font(
+                        Font.SANS_SERIF,
+                        Font.BOLD,
+                        11
+                )
+        );
+
+        button.setFocusPainted(
+                false
+        );
+
+        button.setFocusable(
+                false
+        );
+
+        button.setCursor(
+                Cursor.getPredefinedCursor(
+                        Cursor.HAND_CURSOR
+                )
+        );
+
+        button.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+        button.setMaximumSize(
+                new Dimension(
+                        132,
+                        30
+                )
+        );
+
+        button.setPreferredSize(
+                new Dimension(
+                        132,
+                        30
+                )
+        );
+
+        button.addActionListener(
+                event -> {
+
+                    if (searchControlListener != null) {
+
+                        searchControlListener.run();
+                    }
+                }
+        );
+
+        return button;
+    }
+
+
+    private JButton createNewAnalysisButton() {
+
+        JButton button =
+                new JButton(
+                        "New Analysis"
+                );
+
+        button.setFont(
+                new Font(
+                        Font.SANS_SERIF,
+                        Font.BOLD,
+                        11
+                )
+        );
+
+        button.setFocusPainted(
+                false
+        );
+
+        button.setFocusable(
+                false
+        );
+
+        button.setCursor(
+                Cursor.getPredefinedCursor(
+                        Cursor.HAND_CURSOR
+                )
+        );
+
+        button.setMaximumSize(
+                new Dimension(
+                        132,
+                        30
+                )
+        );
+
+        button.setPreferredSize(
+                new Dimension(
+                        132,
+                        30
+                )
+        );
+
+        button.addActionListener(
+                event -> {
+
+                    if (newAnalysisListener != null) {
+
+                        newAnalysisListener.run();
+                    }
+                }
+        );
+
+        return button;
+    }
+
+
+    private JProgressBar createSearchActivityBar() {
+
+        JProgressBar bar =
+                new JProgressBar();
+
+        bar.setMinimum(
+                0
+        );
+
+        bar.setMaximum(
+                100
+        );
+
+        bar.setValue(
+                0
+        );
+
+        bar.setIndeterminate(
+                false
+        );
+
+        bar.setStringPainted(
+                false
+        );
+
+        bar.setAlignmentX(
+                Component.LEFT_ALIGNMENT
+        );
+
+        bar.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        5
+                )
+        );
+
+        bar.setPreferredSize(
+                new Dimension(
+                        420,
+                        5
+                )
+        );
+
+        bar.setBorderPainted(
+                false
+        );
+
+        return bar;
+    }
+
+
     public void setExploring(
             boolean exploring
     ) {
 
-        /*
-         * Continuous exploration is background engine state, not
-         * navigation state. Do not rewrite the visible header here.
-         *
-         * The current title, outcome, evaluation, and breadcrumb stay
-         * on screen while refreshed analysis snapshots update their
-         * actual values through restoreHeaderForCurrentPath().
-         *
-         * This prevents the header from flashing between:
-         *
-         *     Current Position / Analysis Variation
-         *
-         * and:
-         *
-         *     Searching Variation / Generating positions…
-         *
-         * on every automatic search batch.
-         */
+        telemetrySearching =
+                exploring;
+
+        renderSearchVisualization();
+    }
+
+
+    public void setSearchTelemetry(
+            boolean searching,
+            int graphNodes,
+            long workUnits,
+            boolean focused,
+            List<String> focusPath,
+            boolean workAvailable,
+            boolean paused
+    ) {
+
+        setSearchTelemetry(
+                searching,
+                graphNodes,
+                workUnits,
+                0L,
+                0L,
+                0,
+                0,
+                0,
+                0L,
+                0,
+                0L,
+                0,
+                0,
+                focused,
+                focusPath,
+                workAvailable,
+                paused
+        );
+    }
+
+
+    public void setSearchTelemetry(
+            boolean searching,
+            int graphNodes,
+            long workUnits,
+            long walkerSteps,
+            long coverageSteps,
+            int walkers,
+            int activeWalkers,
+            int maximumWalkerDepth,
+            long walkerPathRevisits,
+            int transpositionNodes,
+            long transpositionLinks,
+            int globalQueueSize,
+            int focusQueueSize,
+            boolean focused,
+            List<String> focusPath,
+            boolean workAvailable,
+            boolean paused
+    ) {
+
+        setSearchTelemetry(
+                "HYBRID",
+                searching,
+                graphNodes,
+                workUnits,
+                walkerSteps,
+                coverageSteps,
+                walkers,
+                activeWalkers,
+                maximumWalkerDepth,
+                walkerPathRevisits,
+                transpositionNodes,
+                transpositionLinks,
+                globalQueueSize,
+                focusQueueSize,
+                focused,
+                focusPath,
+                workAvailable,
+                paused
+        );
+    }
+
+
+    public void setSearchTelemetry(
+            String searchMode,
+            boolean searching,
+            int graphNodes,
+            long workUnits,
+            long walkerSteps,
+            long coverageSteps,
+            int walkers,
+            int activeWalkers,
+            int maximumWalkerDepth,
+            long walkerPathRevisits,
+            int transpositionNodes,
+            long transpositionLinks,
+            int globalQueueSize,
+            int focusQueueSize,
+            boolean focused,
+            List<String> focusPath,
+            boolean workAvailable,
+            boolean paused
+    ) {
+
+        telemetrySearchMode =
+                "DOVETAIL".equalsIgnoreCase(searchMode)
+                        ? "DOVETAIL"
+                        : "HYBRID";
+
+        telemetrySearching =
+                searching;
+
+        telemetryGraphNodes =
+                Math.max(
+                        0,
+                        graphNodes
+                );
+
+        telemetryWorkUnits =
+                Math.max(
+                        0L,
+                        workUnits
+                );
+
+        telemetryWalkerSteps =
+                Math.max(
+                        0L,
+                        walkerSteps
+                );
+
+        telemetryCoverageSteps =
+                Math.max(
+                        0L,
+                        coverageSteps
+                );
+
+        telemetryWalkers =
+                Math.max(
+                        0,
+                        walkers
+                );
+
+        telemetryActiveWalkers =
+                Math.max(
+                        0,
+                        Math.min(
+                                activeWalkers,
+                                telemetryWalkers
+                        )
+                );
+
+        telemetryMaximumWalkerDepth =
+                Math.max(
+                        0,
+                        maximumWalkerDepth
+                );
+
+        telemetryWalkerPathRevisits =
+                Math.max(
+                        0L,
+                        walkerPathRevisits
+                );
+
+        telemetryTranspositionNodes =
+                Math.max(
+                        0,
+                        transpositionNodes
+                );
+
+        telemetryTranspositionLinks =
+                Math.max(
+                        0L,
+                        transpositionLinks
+                );
+
+        telemetryGlobalQueueSize =
+                Math.max(
+                        0,
+                        globalQueueSize
+                );
+
+        telemetryFocusQueueSize =
+                Math.max(
+                        0,
+                        focusQueueSize
+                );
+
+        telemetryFocused =
+                focused;
+
+        telemetryFocusPath =
+                focusPath == null
+                        ? List.of()
+                        : List.copyOf(
+                        focusPath
+                );
+
+        telemetryWorkAvailable =
+                workAvailable;
+
+        telemetryPaused =
+                paused && workAvailable;
+
+        renderSearchVisualization();
+    }
+
+
+    private void renderSearchVisualization() {
+
+        boolean pureDovetail =
+                "DOVETAIL".equals(
+                        telemetrySearchMode
+                );
+
+        boolean hasSearchData =
+                telemetryGraphNodes > 0
+                        || telemetryWorkUnits > 0L;
+
+        String globalState;
+
+        if (telemetrySearching) {
+
+            globalState =
+                    "ACTIVE";
+
+        } else if (telemetryPaused) {
+
+            globalState =
+                    "PAUSED";
+
+        } else if (hasSearchData && !telemetryWorkAvailable) {
+
+            globalState =
+                    "COMPLETE";
+
+        } else {
+
+            globalState =
+                    "IDLE";
+        }
+
+
+        globalSearchLabel.setText(
+                telemetrySearchMode
+                        + " EXPLORATION  •  "
+                        + globalState
+        );
+
+        globalSearchLabel.setForeground(
+                telemetrySearching
+                        ? ACCENT
+                        : SECONDARY_TEXT
+        );
+
+        globalSearchLabel.setToolTipText(
+                pureDovetail
+                        ? "Pure Dovetail advances persistent line walkers in the countable diagonal schedule A1, B1, A2, C1, B2, A3, ..."
+                        : telemetrySearching
+                        ? "Hybrid search is advancing Dovetail line walkers and fair node/edge coverage together."
+                        : telemetryPaused
+                        ? "Search is paused. The current graph and scheduler position are preserved."
+                        : hasSearchData && !telemetryWorkAvailable
+                        ? "No additional search work is currently available."
+                        : "Search has not started yet."
+        );
+
+        globalActivityBar.setIndeterminate(
+                telemetrySearching
+        );
+
+        globalActivityBar.setValue(
+                0
+        );
+
+
+        String focusText;
+
+        if (pureDovetail) {
+
+            if (!telemetryFocusPath.isEmpty()) {
+
+                focusText =
+                        "SELECTED LINE  •  VIEW ONLY  •  "
+                                + formatTelemetryPath(
+                                telemetryFocusPath
+                        );
+
+            } else {
+
+                focusText =
+                        "SELECTED LINE  •  VIEW ONLY";
+            }
+
+        } else if (telemetryFocused
+                && !telemetryFocusPath.isEmpty()) {
+
+            focusText =
+                    "SELECTED LINE  •  "
+                            + (telemetrySearching
+                            ? "FOCUSED"
+                            : telemetryPaused
+                            ? "PAUSED"
+                            : "SELECTED")
+                            + "  •  "
+                            + formatTelemetryPath(
+                            telemetryFocusPath
+                    );
+
+        } else {
+
+            focusText =
+                    "SELECTED LINE  •  NO FOCUS";
+        }
+
+        focusSearchLabel.setText(
+                focusText
+        );
+
+        focusSearchLabel.setForeground(
+                !pureDovetail
+                        && telemetrySearching
+                        && telemetryFocused
+                        ? ACCENT
+                        : SECONDARY_TEXT
+        );
+
+        focusSearchLabel.setToolTipText(
+                pureDovetail
+                        ? "Pure Dovetail keeps the diagonal walker enumeration unchanged. Selecting a line changes the view, not the search schedule."
+                        : telemetryFocused
+                        ? "The selected variation receives bonus coverage turns while global Hybrid exploration continues."
+                        : "Select an analysis line to give that subtree additional Hybrid coverage priority."
+        );
+
+        focusActivityBar.setIndeterminate(
+                !pureDovetail
+                        && telemetrySearching
+                        && telemetryFocused
+        );
+
+        focusActivityBar.setValue(
+                0
+        );
+
+
+        String telemetryState;
+
+        if (telemetrySearching) {
+
+            telemetryState =
+                    telemetrySearchMode
+                            + " SEARCHING";
+
+        } else if (telemetryPaused) {
+
+            telemetryState =
+                    telemetrySearchMode
+                            + " PAUSED";
+
+        } else if (hasSearchData && !telemetryWorkAvailable) {
+
+            telemetryState =
+                    telemetrySearchMode
+                            + " COMPLETE";
+
+        } else {
+
+            telemetryState =
+                    telemetrySearchMode
+                            + " IDLE";
+        }
+
+        searchTelemetryLabel.setText(
+                telemetryState
+                        + "  •  "
+                        + String.format(
+                        "%,d",
+                        telemetryGraphNodes
+                )
+                        + " positions  •  "
+                        + String.format(
+                        "%,d",
+                        telemetryWorkUnits
+                )
+                        + " work"
+        );
+
+        searchTelemetryLabel.setForeground(
+                telemetrySearching
+                        ? PRIMARY_TEXT
+                        : SECONDARY_TEXT
+        );
+
+
+        if (pureDovetail) {
+
+            searchLaneTelemetryLabel.setText(
+                    "LINE WALKERS  "
+                            + String.format(
+                            "%,d",
+                            telemetryWalkerSteps
+                    )
+                            + "  •  NODE COVERAGE  OFF"
+            );
+
+            searchLaneTelemetryLabel.setToolTipText(
+                    "Pure Dovetail uses only the persistent diagonal walker lane: A1, B1, A2, C1, B2, A3, ..."
+            );
+
+        } else {
+
+            searchLaneTelemetryLabel.setText(
+                    "LINE WALKERS  "
+                            + String.format(
+                            "%,d",
+                            telemetryWalkerSteps
+                    )
+                            + "  •  NODE COVERAGE  "
+                            + String.format(
+                            "%,d",
+                            telemetryCoverageSteps
+                    )
+            );
+
+            searchLaneTelemetryLabel.setToolTipText(
+                    "Hybrid combines persistent diagonal walkers with persistent fair node/edge coverage. "
+                            + "Global queue: "
+                            + String.format(
+                            "%,d",
+                            telemetryGlobalQueueSize
+                    )
+                            + "; focus queue: "
+                            + String.format(
+                            "%,d",
+                            telemetryFocusQueueSize
+                    )
+                            + "."
+            );
+        }
+
+        searchLaneTelemetryLabel.setForeground(
+                telemetrySearching
+                        ? ACCENT
+                        : SECONDARY_TEXT
+        );
+
+
+        searchStructureTelemetryLabel.setText(
+                "WALKERS  "
+                        + String.format(
+                        "%,d",
+                        telemetryActiveWalkers
+                )
+                        + "/"
+                        + String.format(
+                        "%,d",
+                        telemetryWalkers
+                )
+                        + "  •  DEPTH  "
+                        + String.format(
+                        "%,d",
+                        telemetryMaximumWalkerDepth
+                )
+        );
+
+        searchStructureTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+
+        searchGraphTelemetryLabel.setText(
+                "TRANSPOSITIONS  "
+                        + String.format(
+                        "%,d",
+                        telemetryTranspositionLinks
+                )
+                        + "  •  REVISITS  "
+                        + String.format(
+                        "%,d",
+                        telemetryWalkerPathRevisits
+                )
+        );
+
+        searchGraphTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchGraphTelemetryLabel.setToolTipText(
+                String.format(
+                        "%,d canonical positions currently have multiple parents; %,d extra incoming parent links are merged as transpositions. "
+                                + "This is a cumulative graph total, including transpositions discovered during the initial fixed-depth seed search.",
+                        telemetryTranspositionNodes,
+                        telemetryTranspositionLinks
+                )
+        );
+
+
+        searchControlButton.setText(
+                telemetryPaused
+                        ? "Resume Search"
+                        : "Pause Search"
+        );
+
+        searchControlButton.setEnabled(
+                telemetryWorkAvailable
+                        && hasSearchData
+        );
+
+        searchControlButton.setToolTipText(
+                telemetryPaused
+                        ? "Resume this exact persistent search where it stopped."
+                        : "Pause this persistent search without discarding the graph."
+        );
+    }
+
+
+    private String formatTelemetryPath(
+            List<String> focusPath
+    ) {
+
+        if (focusPath == null
+                ||
+                focusPath.isEmpty()) {
+
+            return "Start";
+        }
+
+        String joined =
+                String.join(
+                        " › ",
+                        focusPath
+                );
+
+        int maximumLength =
+                38;
+
+        if (joined.length()
+                <= maximumLength) {
+
+            return joined;
+        }
+
+        return "…"
+                + joined.substring(
+                joined.length()
+                        - maximumLength
+        );
     }
 
 
@@ -2935,6 +4877,41 @@ public class AnalysisPanel extends JPanel {
         applyThemeRecursively(
                 this
         );
+
+
+        stockfishHeadingLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishStatusLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishPvLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        stockfishSummaryLabel.setForeground(
+                PRIMARY_TEXT
+        );
+
+        searchTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchLaneTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchStructureTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        searchGraphTelemetryLabel.setForeground(
+                SECONDARY_TEXT
+        );
+
+        renderSearchVisualization();
 
 
         if (currentAnalysis != null) {
@@ -3174,6 +5151,33 @@ public class AnalysisPanel extends JPanel {
     }
 
 
+    public void setSearchControlListener(
+            Runnable listener
+    ) {
+
+        searchControlListener =
+                listener;
+    }
+
+
+    public void setNewAnalysisListener(
+            Runnable listener
+    ) {
+
+        newAnalysisListener =
+                listener;
+    }
+
+
+    public void setPathCollapseListener(
+            Runnable listener
+    ) {
+
+        pathCollapseListener =
+                listener;
+    }
+
+
     public void setBackEnabled(
             boolean enabled
     ) {
@@ -3301,8 +5305,8 @@ public class AnalysisPanel extends JPanel {
 
         countRow.setMaximumSize(
                 new Dimension(
-                        205,
-                        18
+                        Integer.MAX_VALUE,
+                        14
                 )
         );
 
@@ -3392,7 +5396,7 @@ public class AnalysisPanel extends JPanel {
         progressBar.setPreferredSize(
                 new Dimension(
                         205,
-                        6
+                        4
                 )
         );
 
@@ -3400,15 +5404,15 @@ public class AnalysisPanel extends JPanel {
         progressBar.setMinimumSize(
                 new Dimension(
                         80,
-                        6
+                        4
                 )
         );
 
 
         progressBar.setMaximumSize(
                 new Dimension(
-                        205,
-                        6
+                        Integer.MAX_VALUE,
+                        4
                 )
         );
 
@@ -3425,7 +5429,7 @@ public class AnalysisPanel extends JPanel {
 
         panel.add(
                 Box.createVerticalStrut(
-                        2
+                        1
                 )
         );
 
@@ -3455,27 +5459,84 @@ public class AnalysisPanel extends JPanel {
     // Formatting
     // =========================================================
 
+    public void setBlackPerspective(
+            boolean blackPerspective
+    ) {
+
+        this.blackPerspective =
+                blackPerspective;
+
+        rebuildVerticalDisplay();
+        restoreHeaderForCurrentPath();
+    }
+
+
+    public boolean isBlackPerspective() {
+        return blackPerspective;
+    }
+
+
+    private String formatMoveImpact(
+            int whiteDelta
+    ) {
+
+        int perspectiveDelta =
+                blackPerspective
+                        ? -whiteDelta
+                        : whiteDelta;
+
+        String side =
+                blackPerspective
+                        ? "Black"
+                        : "White";
+
+        if (perspectiveDelta > 0) {
+            return String.format(
+                    "+%.2f %s advantage",
+                    perspectiveDelta / 100.0,
+                    side
+            );
+        }
+
+        if (perspectiveDelta < 0) {
+            return String.format(
+                    "-%.2f %s disadvantage",
+                    Math.abs(perspectiveDelta) / 100.0,
+                    side
+            );
+        }
+
+        return "0.00 No change";
+    }
+
+
     private String formatEvaluation(
             int evaluation
     ) {
 
         double pawns =
-                evaluation / 100.0;
+                Math.abs(evaluation) / 100.0;
 
 
-        if (pawns > 0) {
+        if (evaluation > 0) {
 
             return String.format(
-                    "+%.2f",
+                    "White advantage %.2f",
                     pawns
             );
         }
 
 
-        return String.format(
-                "%.2f",
-                pawns
-        );
+        if (evaluation < 0) {
+
+            return String.format(
+                    "Black advantage %.2f",
+                    pawns
+            );
+        }
+
+
+        return "Equal";
     }
 
 
@@ -3573,7 +5634,7 @@ public class AnalysisPanel extends JPanel {
 
         private final Position position;
 
-        private final int searchValue;
+        private final int evaluation;
 
         private final SearchOutcome outcome;
 
@@ -3582,7 +5643,7 @@ public class AnalysisPanel extends JPanel {
 
         public PreviewData(
                 Position position,
-                int searchValue,
+                int evaluation,
                 SearchOutcome outcome,
                 int mateDistance
         ) {
@@ -3591,8 +5652,8 @@ public class AnalysisPanel extends JPanel {
                     position;
 
 
-            this.searchValue =
-                    searchValue;
+            this.evaluation =
+                    evaluation;
 
 
             this.outcome =
@@ -3610,9 +5671,15 @@ public class AnalysisPanel extends JPanel {
         }
 
 
+        public int getEvaluation() {
+
+            return evaluation;
+        }
+
+
         public int getSearchValue() {
 
-            return searchValue;
+            return evaluation;
         }
 
 
@@ -3709,6 +5776,24 @@ public class AnalysisPanel extends JPanel {
 
 
             return null;
+        }
+
+
+        int getEvaluation() {
+
+            if (moveAnalysis != null) {
+
+                return moveAnalysis.getEvaluation();
+            }
+
+
+            if (variationNode != null) {
+
+                return variationNode.getStaticEvaluation();
+            }
+
+
+            return 0;
         }
 
 
@@ -3842,6 +5927,7 @@ public class AnalysisPanel extends JPanel {
                 String mateDisplay,
                 int staticEvaluation,
                 int searchValue,
+                int parentEvaluation,
                 int generatedPositions,
                 int exploredPositions,
                 int solvedPositions,
@@ -3862,6 +5948,20 @@ public class AnalysisPanel extends JPanel {
 
             setAlignmentX(
                     Component.LEFT_ALIGNMENT
+            );
+
+            setMaximumSize(
+                    new Dimension(
+                            Integer.MAX_VALUE,
+                            178
+                    )
+            );
+
+            setPreferredSize(
+                    new Dimension(
+                            450,
+                            174
+                    )
             );
 
 
@@ -3894,7 +5994,7 @@ public class AnalysisPanel extends JPanel {
             cardSurface.setMaximumSize(
                     new Dimension(
                             Integer.MAX_VALUE,
-                            218
+                            178
                     )
             );
 
@@ -3902,7 +6002,7 @@ public class AnalysisPanel extends JPanel {
             cardSurface.setPreferredSize(
                     new Dimension(
                             450,
-                            210
+                            174
                     )
             );
 
@@ -3972,10 +6072,56 @@ public class AnalysisPanel extends JPanel {
 
             information.setBorder(
                     BorderFactory.createEmptyBorder(
-                            8,
+                            6,
                             0,
-                            8,
+                            5,
                             12
+                    )
+            );
+
+
+            /*
+             * Every candidate reserves the same header slot.
+             *
+             * Previously only #1 had the BEST LINE label, so #2 and later
+             * started their move/evaluation/statistics stack higher inside
+             * an otherwise identical-height card. That made the lower half
+             * of those cards feel oddly stretched.
+             *
+             * Keep #1's spacing as the visual baseline and reserve the same
+             * vertical slot on every other candidate.
+             */
+            JPanel bestLineSlot =
+                    new JPanel(
+                            new BorderLayout()
+                    );
+
+            bestLineSlot.setOpaque(
+                    false
+            );
+
+            bestLineSlot.setAlignmentX(
+                    Component.LEFT_ALIGNMENT
+            );
+
+            bestLineSlot.setMinimumSize(
+                    new Dimension(
+                            1,
+                            14
+                    )
+            );
+
+            bestLineSlot.setPreferredSize(
+                    new Dimension(
+                            1,
+                            14
+                    )
+            );
+
+            bestLineSlot.setMaximumSize(
+                    new Dimension(
+                            Integer.MAX_VALUE,
+                            14
                     )
             );
 
@@ -4002,22 +6148,23 @@ public class AnalysisPanel extends JPanel {
                 );
 
 
-                bestLabel.setAlignmentX(
-                        Component.LEFT_ALIGNMENT
-                );
-
-
-                information.add(
-                        bestLabel
-                );
-
-
-                information.add(
-                        Box.createVerticalStrut(
-                                2
-                        )
+                bestLineSlot.add(
+                        bestLabel,
+                        BorderLayout.WEST
                 );
             }
+
+
+            information.add(
+                    bestLineSlot
+            );
+
+
+            information.add(
+                    Box.createVerticalStrut(
+                            2
+                    )
+            );
 
 
             JLabel moveLabel =
@@ -4074,9 +6221,14 @@ public class AnalysisPanel extends JPanel {
 
             } else {
 
+                /*
+                 * Impact is the visible evaluator change from the
+                 * common parent position to this resulting position.
+                 */
                 mainValue =
-                        formatEvaluation(
-                                searchValue
+                        "Move impact  "
+                                + formatMoveImpact(
+                                staticEvaluation - parentEvaluation
                         );
             }
 
@@ -4129,20 +6281,15 @@ public class AnalysisPanel extends JPanel {
             );
 
 
-            if (staticEvaluation
-                    != searchValue) {
+            detail.append(
+                    "  ·  Evaluation: "
+            );
 
-                detail.append(
-                        "  ·  static "
-                );
-
-
-                detail.append(
-                        formatEvaluation(
-                                staticEvaluation
-                        )
-                );
-            }
+            detail.append(
+                    formatEvaluation(
+                            staticEvaluation
+                    )
+            );
 
 
             JLabel detailLabel =
@@ -4176,17 +6323,48 @@ public class AnalysisPanel extends JPanel {
 
 
             // =================================================
-            // Explored
+            // Exploration / solved statistics
             // =================================================
 
             information.add(
                     Box.createVerticalStrut(
-                            5
+                            4
                     )
             );
 
 
-            information.add(
+            /*
+             * M72C: keep both statistics visible without pushing the
+             * bottom action ("Inspect continuations") outside the card.
+             * The two metrics are peers, so a two-column row is also
+             * visually cleaner than stacking one above the other.
+             */
+            JPanel statisticsRow =
+                    new JPanel(
+                            new GridLayout(
+                                    1,
+                                    2,
+                                    12,
+                                    0
+                            )
+                    );
+
+            statisticsRow.setOpaque(
+                    false
+            );
+
+            statisticsRow.setAlignmentX(
+                    Component.LEFT_ALIGNMENT
+            );
+
+            statisticsRow.setMaximumSize(
+                    new Dimension(
+                            Integer.MAX_VALUE,
+                            34
+                    )
+            );
+
+            statisticsRow.add(
                     createStatisticPanel(
                             "Explored positions",
                             generatedPositions,
@@ -4194,19 +6372,7 @@ public class AnalysisPanel extends JPanel {
                     )
             );
 
-
-            // =================================================
-            // Solved
-            // =================================================
-
-            information.add(
-                    Box.createVerticalStrut(
-                            5
-                    )
-            );
-
-
-            information.add(
+            statisticsRow.add(
                     createStatisticPanel(
                             "Solved positions",
                             generatedPositions,
@@ -4214,9 +6380,15 @@ public class AnalysisPanel extends JPanel {
                     )
             );
 
+            information.add(
+                    statisticsRow
+            );
+
 
             information.add(
-                    Box.createVerticalGlue()
+                    Box.createVerticalStrut(
+                            14
+                    )
             );
 
 
@@ -4317,11 +6489,20 @@ public class AnalysisPanel extends JPanel {
                     new MouseAdapter() {
 
                         @Override
-                        public void mouseClicked(
+                        public void mousePressed(
                                 MouseEvent event
                         ) {
 
-                            if (clickAction != null) {
+                            /*
+                             * Live search can rebuild cards between mouse press
+                             * and mouse release. Firing on the press makes the
+                             * selection atomic instead of occasionally losing
+                             * the Swing mouseClicked event with the old card.
+                             */
+                            if (SwingUtilities.isLeftMouseButton(
+                                    event
+                            )
+                                    && clickAction != null) {
 
                                 clickAction.run();
                             }

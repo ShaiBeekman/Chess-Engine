@@ -19,11 +19,11 @@ import java.util.Random;
 
 
 /**
- * Exact retrograde tablebase for KQK and KRK.
+ * Exact retrograde tablebase for KQK, KRK, and KPK.
  *
  * A table instance represents one material class:
  *
- *     king + {queen|rook} versus king
+ *     king + {queen|rook|pawn} versus king
  *
  * with a fixed color owning the major piece.
  *
@@ -95,6 +95,15 @@ public final class ThreePieceTablebase {
 
     private final MoveGenerator moveGenerator;
 
+    /*
+     * KPK promotions leave the KPK state space.  Queen and rook
+     * promotions are resolved exactly by the already-solved KQK/KRK
+     * tablebases. Bishop/knight promotion is K+B/N vs K and therefore
+     * an exact draw.
+     */
+    private ThreePieceTablebase queenPromotionTablebase;
+    private ThreePieceTablebase rookPromotionTablebase;
+
     private final byte[] outcome;
     private final short[] distance;
 
@@ -114,10 +123,11 @@ public final class ThreePieceTablebase {
     ) {
 
         if (majorType != PieceType.QUEEN
-                && majorType != PieceType.ROOK) {
+                && majorType != PieceType.ROOK
+                && majorType != PieceType.PAWN) {
 
             throw new IllegalArgumentException(
-                    "ThreePieceTablebase currently supports only KQK and KRK."
+                    "ThreePieceTablebase currently supports only KQK, KRK, and KPK."
             );
         }
 
@@ -163,6 +173,18 @@ public final class ThreePieceTablebase {
 
         long started =
                 System.currentTimeMillis();
+
+
+        legalStateCount = 0;
+        winCount = 0;
+        lossCount = 0;
+        drawCount = 0;
+
+
+        if (majorType == PieceType.PAWN) {
+
+            ensurePromotionTablebases();
+        }
 
 
         int[] predecessorCount =
@@ -290,6 +312,10 @@ public final class ThreePieceTablebase {
             }
 
 
+            int seededWinDistance =
+                    Integer.MAX_VALUE;
+
+
             for (Move move :
                     legalMoves) {
 
@@ -305,22 +331,113 @@ public final class ThreePieceTablebase {
                         );
 
 
-                /*
-                 * A move that captures the major piece leaves K vs K.
-                 * That successor is an exact draw but is outside this
-                 * table's material class. It intentionally contributes
-                 * to remaining[state], so the parent cannot later be
-                 * misclassified as a forced loss.
-                 */
-                if (childState < 0) {
+                if (childState >= 0) {
+
+                    predecessorCount[
+                            childState
+                            ]++;
 
                     continue;
                 }
 
 
-                predecessorCount[
-                        childState
-                        ]++;
+                /*
+                 * The successor left this material class.
+                 *
+                 * Q/R capture -> K vs K draw.
+                 * Pawn capture -> K vs K draw.
+                 * Pawn promotion -> exact KQK/KRK lookup, or an exact
+                 * K+B/N vs K draw.
+                 */
+                ExternalResult external =
+                        classifyExternalSuccessor(
+                                move,
+                                next
+                        );
+
+
+                if (external.outcome()
+                        == LOSS) {
+
+                    int candidate =
+                            external.distance()
+                                    + 1;
+
+                    if (candidate
+                            < seededWinDistance) {
+
+                        seededWinDistance =
+                                candidate;
+                    }
+
+                } else if (external.outcome()
+                        == WIN) {
+
+                    remaining[state]--;
+
+
+                    if (external.distance()
+                            > maximumWinningChildDistance[
+                            state
+                            ]) {
+
+                        maximumWinningChildDistance[
+                                state
+                                ] =
+                                safeShort(
+                                        external.distance()
+                                );
+                    }
+                }
+            }
+
+
+            /*
+             * A known external LOSS child immediately makes the parent a
+             * WIN.  If every legal move is already known to be an
+             * external WIN, the parent is immediately a LOSS.
+             */
+            if (seededWinDistance
+                    != Integer.MAX_VALUE) {
+
+                outcome[state] =
+                        WIN;
+
+                distance[state] =
+                        safeShort(
+                                seededWinDistance
+                        );
+
+                queue.add(
+                        new SolvedState(
+                                state,
+                                seededWinDistance
+                        )
+                );
+
+            } else if (remaining[state]
+                    == 0) {
+
+                int parentDistance =
+                        maximumWinningChildDistance[
+                                state
+                                ]
+                                + 1;
+
+                outcome[state] =
+                        LOSS;
+
+                distance[state] =
+                        safeShort(
+                                parentDistance
+                        );
+
+                queue.add(
+                        new SolvedState(
+                                state,
+                                parentDistance
+                        )
+                );
             }
         }
 
@@ -717,14 +834,17 @@ public final class ThreePieceTablebase {
 
             if (childState < 0) {
 
-                /*
-                 * Capturing the major piece produces K vs K.
-                 */
+                ExternalResult external =
+                        classifyExternalSuccessor(
+                                move,
+                                next
+                        );
+
                 childOutcome =
-                        DRAW;
+                        external.outcome();
 
                 childDistance =
-                        -1;
+                        external.distance();
 
             } else {
 
@@ -900,6 +1020,231 @@ public final class ThreePieceTablebase {
         return positionForState(
                 selectedState
         );
+    }
+
+
+    // =========================================================
+    // OUT-OF-CLASS SUCCESSORS
+    // =========================================================
+
+    private ExternalResult classifyExternalSuccessor(
+            Move move,
+            Position next
+    ) {
+
+        if (majorType != PieceType.PAWN) {
+
+            /*
+             * In KQK/KRK the only legal way to leave the class is for
+             * the lone king to capture the major piece, producing K vs K.
+             */
+            return new ExternalResult(
+                    DRAW,
+                    -1
+            );
+        }
+
+
+        /*
+         * If the pawn disappeared without a promoted replacement, it was
+         * captured and the result is K vs K.
+         */
+        PieceType promotedType =
+                promotedPieceType(
+                        next
+                );
+
+
+        if (promotedType == null) {
+
+            return new ExternalResult(
+                    DRAW,
+                    -1
+            );
+        }
+
+
+        if (promotedType == PieceType.BISHOP
+                || promotedType == PieceType.KNIGHT) {
+
+            /*
+             * K+B vs K and K+N vs K are exact dead-position draws.
+             */
+            return new ExternalResult(
+                    DRAW,
+                    -1
+            );
+        }
+
+
+        ensurePromotionTablebases();
+
+
+        ThreePieceTablebase promotionTablebase =
+                switch (promotedType) {
+
+                    case QUEEN ->
+                            queenPromotionTablebase;
+
+                    case ROOK ->
+                            rookPromotionTablebase;
+
+                    default ->
+                            null;
+                };
+
+
+        if (promotionTablebase == null) {
+
+            throw new IllegalStateException(
+                    "Unsupported promotion successor: "
+                            + promotedType
+            );
+        }
+
+
+        Probe probe =
+                promotionTablebase.probe(
+                        next
+                );
+
+
+        return switch (probe.outcome()) {
+
+            case WIN ->
+                    new ExternalResult(
+                            WIN,
+                            probe.mateDistance()
+                    );
+
+            case LOSS ->
+                    new ExternalResult(
+                            LOSS,
+                            probe.mateDistance()
+                    );
+
+            case DRAW ->
+                    new ExternalResult(
+                            DRAW,
+                            -1
+                    );
+
+            case UNSUPPORTED ->
+                    throw new IllegalStateException(
+                            "Promotion produced a position that the "
+                                    + promotedType
+                                    + " tablebase could not encode."
+                    );
+        };
+    }
+
+
+    private void ensurePromotionTablebases() {
+
+        if (majorType != PieceType.PAWN) {
+            return;
+        }
+
+
+        if (queenPromotionTablebase != null
+                && rookPromotionTablebase != null) {
+
+            return;
+        }
+
+
+        ThreePieceTablebaseService service =
+                new ThreePieceTablebaseService();
+
+
+        queenPromotionTablebase =
+                service.get(
+                        PieceType.QUEEN,
+                        majorColor
+                );
+
+
+        rookPromotionTablebase =
+                service.get(
+                        PieceType.ROOK,
+                        majorColor
+                );
+    }
+
+
+    private PieceType promotedPieceType(
+            Position position
+    ) {
+
+        Board board =
+                position.getBoard();
+
+
+        int nonKingCount =
+                0;
+
+        PieceType found =
+                null;
+
+
+        for (int rank = 0;
+             rank < 8;
+             rank++) {
+
+            for (int file = 0;
+                 file < 8;
+                 file++) {
+
+                Piece piece =
+                        board.getPiece(
+                                new Square(
+                                        file,
+                                        rank
+                                )
+                        );
+
+
+                if (piece == null
+                        || piece.type()
+                        == PieceType.KING) {
+
+                    continue;
+                }
+
+
+                nonKingCount++;
+
+
+                if (piece.color()
+                        != majorColor) {
+
+                    return null;
+                }
+
+
+                found =
+                        piece.type();
+            }
+        }
+
+
+        if (nonKingCount == 0) {
+
+            return null;
+        }
+
+
+        if (nonKingCount != 1
+                ||
+                found == PieceType.PAWN) {
+
+            throw new IllegalStateException(
+                    "Unexpected KPK external successor."
+            );
+        }
+
+
+        return found;
     }
 
 
@@ -1142,14 +1487,34 @@ public final class ThreePieceTablebase {
 
 
         /*
+         * A pawn cannot legally remain on its promotion rank or on the
+         * opposite back rank. Promotion transitions are handled as
+         * external successors instead.
+         */
+        if (majorType == PieceType.PAWN) {
+
+            int pawnRank =
+                    rankOf(
+                            state.major()
+                    );
+
+            if (pawnRank == 0
+                    || pawnRank == 7) {
+
+                return false;
+            }
+        }
+
+
+        /*
          * In a legally reachable chess position, the player who is
          * NOT to move cannot already have a king left in check by the
          * side that is about to move.
          *
-         * In KQK/KRK the only non-king long-range attacker is the major
-         * piece. Therefore the only additional structural impossibility
-         * occurs when the major side is to move while its major piece
-         * is already attacking the lone king.
+         * The only non-king attacker is the third piece. Therefore an
+         * additional structural impossibility occurs when that piece's
+         * side is to move while the third piece is already attacking the
+         * lone king. This applies to queen, rook, and pawn geometry.
          */
         if (state.sideToMove()
                 == majorColor) {
@@ -1166,7 +1531,7 @@ public final class ThreePieceTablebase {
                             : state.blackKing();
 
 
-            if (majorAttacks(
+            if (thirdPieceAttacks(
                     state.major(),
                     loneKing,
                     ownKing
@@ -1211,7 +1576,7 @@ public final class ThreePieceTablebase {
                         : state.blackKing();
 
 
-        return majorAttacks(
+        return thirdPieceAttacks(
                 state.major(),
                 loneKing,
                 ownKing
@@ -1223,7 +1588,76 @@ public final class ThreePieceTablebase {
     // ATTACK GEOMETRY
     // =========================================================
 
-    private boolean majorAttacks(
+    private boolean thirdPieceAttacks(
+            int pieceSquare,
+            int targetSquare,
+            int blockerSquare
+    ) {
+
+        if (majorType == PieceType.PAWN) {
+
+            return pawnAttacks(
+                    pieceSquare,
+                    targetSquare,
+                    majorColor
+            );
+        }
+
+
+        return slidingPieceAttacks(
+                pieceSquare,
+                targetSquare,
+                blockerSquare
+        );
+    }
+
+
+    private boolean pawnAttacks(
+            int pawnSquare,
+            int targetSquare,
+            Color pawnColor
+    ) {
+
+        int pawnFile =
+                fileOf(
+                        pawnSquare
+                );
+
+        int pawnRank =
+                rankOf(
+                        pawnSquare
+                );
+
+        int targetFile =
+                fileOf(
+                        targetSquare
+                );
+
+        int targetRank =
+                rankOf(
+                        targetSquare
+                );
+
+
+        int expectedRankDelta =
+                pawnColor == Color.WHITE
+                        ? 1
+                        : -1;
+
+
+        return targetRank
+                - pawnRank
+                == expectedRankDelta
+                &&
+                Math.abs(
+                        targetFile
+                                - pawnFile
+                )
+                        == 1;
+    }
+
+
+    private boolean slidingPieceAttacks(
             int majorSquare,
             int targetSquare,
             int blockerSquare
@@ -1448,6 +1882,187 @@ public final class ThreePieceTablebase {
 
 
     // =========================================================
+    // PERSISTENCE SUPPORT
+    // =========================================================
+
+    static int persistenceStateCount() {
+        return STATE_COUNT;
+    }
+
+
+    byte[] copyOutcomeDataForPersistence() {
+
+        ensureBuilt();
+
+        return outcome.clone();
+    }
+
+
+    short[] copyDistanceDataForPersistence() {
+
+        ensureBuilt();
+
+        return distance.clone();
+    }
+
+
+    synchronized void restoreFromPersistence(
+            byte[] persistedOutcome,
+            short[] persistedDistance
+    ) {
+
+        if (built) {
+
+            throw new IllegalStateException(
+                    "Cannot restore persistence data into an already built tablebase."
+            );
+        }
+
+
+        if (persistedOutcome == null
+                || persistedDistance == null) {
+
+            throw new IllegalArgumentException(
+                    "Persisted tablebase arrays cannot be null."
+            );
+        }
+
+
+        if (persistedOutcome.length != STATE_COUNT
+                || persistedDistance.length != STATE_COUNT) {
+
+            throw new IllegalArgumentException(
+                    "Persisted tablebase arrays have the wrong state count."
+            );
+        }
+
+
+        int restoredLegalStateCount = 0;
+        int restoredWinCount = 0;
+        int restoredLossCount = 0;
+        int restoredDrawCount = 0;
+
+
+        for (int state = 0;
+             state < STATE_COUNT;
+             state++) {
+
+            byte restoredOutcome =
+                    persistedOutcome[state];
+
+            short restoredDistance =
+                    persistedDistance[state];
+
+
+            switch (restoredOutcome) {
+
+                case INVALID -> {
+
+                    if (restoredDistance != -1) {
+
+                        throw new IllegalArgumentException(
+                                "Invalid state has a persisted mate distance at state "
+                                        + state
+                                        + "."
+                        );
+                    }
+                }
+
+                case WIN -> {
+
+                    if (restoredDistance < 1) {
+
+                        throw new IllegalArgumentException(
+                                "Winning state has an invalid mate distance at state "
+                                        + state
+                                        + "."
+                        );
+                    }
+
+                    restoredLegalStateCount++;
+                    restoredWinCount++;
+                }
+
+                case LOSS -> {
+
+                    if (restoredDistance < 0) {
+
+                        throw new IllegalArgumentException(
+                                "Losing state has an invalid mate distance at state "
+                                        + state
+                                        + "."
+                        );
+                    }
+
+                    restoredLegalStateCount++;
+                    restoredLossCount++;
+                }
+
+                case DRAW -> {
+
+                    if (restoredDistance != -1) {
+
+                        throw new IllegalArgumentException(
+                                "Draw state has a persisted mate distance at state "
+                                        + state
+                                        + "."
+                        );
+                    }
+
+                    restoredLegalStateCount++;
+                    restoredDrawCount++;
+                }
+
+                default ->
+                        throw new IllegalArgumentException(
+                                "Unknown persisted outcome value "
+                                        + restoredOutcome
+                                        + " at state "
+                                        + state
+                                        + "."
+                        );
+            }
+        }
+
+
+        System.arraycopy(
+                persistedOutcome,
+                0,
+                outcome,
+                0,
+                STATE_COUNT
+        );
+
+        System.arraycopy(
+                persistedDistance,
+                0,
+                distance,
+                0,
+                STATE_COUNT
+        );
+
+
+        legalStateCount =
+                restoredLegalStateCount;
+
+        winCount =
+                restoredWinCount;
+
+        lossCount =
+                restoredLossCount;
+
+        drawCount =
+                restoredDrawCount;
+
+        buildMillis =
+                0;
+
+        built =
+                true;
+    }
+
+
+    // =========================================================
     // HELPERS / METRICS
     // =========================================================
 
@@ -1509,9 +2124,23 @@ public final class ThreePieceTablebase {
     public String materialName() {
 
         String major =
-                majorType == PieceType.QUEEN
-                        ? "Q"
-                        : "R";
+                switch (majorType) {
+
+                    case QUEEN ->
+                            "Q";
+
+                    case ROOK ->
+                            "R";
+
+                    case PAWN ->
+                            "P";
+
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported three-piece material: "
+                                            + majorType
+                            );
+                };
 
 
         return majorColor == Color.WHITE
@@ -1615,9 +2244,56 @@ public final class ThreePieceTablebase {
     }
 
 
+    private record ExternalResult(
+            byte outcome,
+            int distance
+    ) {
+    }
+
+
     private record SolvedState(
             int state,
             int distance
     ) {
     }
+
+    public Probe probeSquares(
+            int whiteKingSquare,
+            int blackKingSquare,
+            int majorPieceSquare,
+            boolean blackToMove
+    ) {
+        int state =
+                (((whiteKingSquare * 64
+                        + blackKingSquare) * 64
+                        + majorPieceSquare) * 2)
+                        + (blackToMove ? 1 : 0);
+
+        if (!built
+                || state < 0
+                || state >= outcome.length
+                || outcome[state] == INVALID) {
+            return new Probe(
+                    Outcome.UNSUPPORTED,
+                    -1
+            );
+        }
+
+        Outcome mapped =
+                switch (outcome[state]) {
+                    case WIN -> Outcome.WIN;
+                    case LOSS -> Outcome.LOSS;
+                    case DRAW -> Outcome.DRAW;
+                    default -> Outcome.UNSUPPORTED;
+                };
+
+        return new Probe(
+                mapped,
+                mapped == Outcome.WIN
+                        || mapped == Outcome.LOSS
+                        ? distance[state]
+                        : -1
+        );
+    }
 }
+

@@ -8,6 +8,7 @@ import main.java.chess.model.PieceType;
 import main.java.chess.model.Position;
 import main.java.chess.model.PositionKey;
 import main.java.chess.model.Square;
+import main.java.chess.rules.AttackDetector;
 import main.java.chess.rules.MoveGenerator;
 
 import javax.swing.JPanel;
@@ -49,6 +50,13 @@ public class ChessBoardPanel extends JPanel {
             new java.awt.Color(42, 107, 173, 45);
 
     /*
+     * Painted by the board itself so the loading dim covers exactly the same
+     * 640 x 640 pixels as the chess squares, with no Swing-layout edge sliver.
+     */
+    private static final java.awt.Color LOADING_OVERLAY =
+            new java.awt.Color(8, 13, 18, 150);
+
+    /*
      * Actual playable position.
      */
     private Position position;
@@ -59,9 +67,19 @@ public class ChessBoardPanel extends JPanel {
     private Position previewPosition;
 
     private final MoveGenerator moveGenerator;
+    private final AttackDetector attackDetector;
 
     private Square selectedSquare;
     private List<Move> selectedLegalMoves;
+
+    /*
+     * Promotion is chosen directly on the board.  When several legal
+     * promotion moves share a destination, the move is held here until
+     * the player clicks one of the four displayed pieces.
+     */
+    private List<Move> pendingPromotionMoves;
+    private Square pendingPromotionSquare;
+    private int hoveredPromotionChoice;
 
     private Consumer<Position> positionChangeListener;
     private Consumer<Position> previewCommitListener;
@@ -86,6 +104,19 @@ public class ChessBoardPanel extends JPanel {
     private Board setupBoard;
     private Color setupSideToMove;
 
+    /*
+     * Setup-editor keyboard history. This is separate from ChessWindow's
+     * played-game and analysis navigation histories.
+     */
+    private final List<SetupSnapshot> setupHistory;
+    private int setupHistoryIndex;
+
+    /* M68A: false = White at bottom, true = Black at bottom. */
+    private boolean flipped;
+
+    /* Exact-endgame tablebase loading visual state. */
+    private boolean loadingDimmed;
+
 
     public ChessBoardPanel(
             Position position
@@ -99,13 +130,27 @@ public class ChessBoardPanel extends JPanel {
 
         this.position = position;
         this.previewPosition = null;
+        this.flipped = false;
+        this.loadingDimmed = false;
 
         this.moveGenerator =
                 new MoveGenerator();
 
+        this.attackDetector =
+                new AttackDetector();
+
         this.selectedSquare = null;
         this.selectedLegalMoves =
                 new ArrayList<>();
+
+        this.pendingPromotionMoves =
+                new ArrayList<>();
+
+        this.pendingPromotionSquare =
+                null;
+
+        this.hoveredPromotionChoice =
+                -1;
 
         this.dragSourceSquare = null;
         this.draggedPiece = null;
@@ -115,6 +160,12 @@ public class ChessBoardPanel extends JPanel {
         this.setupBoard = null;
         this.setupSideToMove =
                 position.getSideToMove();
+
+        this.setupHistory =
+                new ArrayList<>();
+
+        this.setupHistoryIndex =
+                -1;
 
         setPreferredSize(
                 new Dimension(
@@ -152,6 +203,16 @@ public class ChessBoardPanel extends JPanel {
                                 event
                         );
                     }
+
+
+                    @Override
+                    public void mouseMoved(
+                            MouseEvent event
+                    ) {
+                        handleMouseMoved(
+                                event
+                        );
+                    }
                 };
 
         addMouseListener(
@@ -163,6 +224,30 @@ public class ChessBoardPanel extends JPanel {
         );
     }
 
+
+    public void setFlipped(boolean flipped) {
+        this.flipped = flipped;
+        clearSelection();
+        cancelDrag();
+        clearPendingPromotion();
+        repaint();
+    }
+
+    public boolean isFlipped() {
+        return flipped;
+    }
+
+    public void flipBoard() {
+        setFlipped(!flipped);
+    }
+
+    private int displayFile(int modelFile) {
+        return flipped ? 7 - modelFile : modelFile;
+    }
+
+    private int displayRank(int modelRank) {
+        return flipped ? modelRank : 7 - modelRank;
+    }
 
     // =========================================================
     // Real position
@@ -205,6 +290,7 @@ public class ChessBoardPanel extends JPanel {
         }
 
         cancelDrag();
+        clearPendingPromotion();
 
         repaint();
     }
@@ -292,8 +378,20 @@ public class ChessBoardPanel extends JPanel {
 
     public void beginSetupMode() {
 
-        Position source =
-                getDisplayedPosition();
+        beginSetupMode(
+                getDisplayedPosition()
+        );
+    }
+
+
+    /**
+     * Begin Setup from an explicit editor source without replacing the real
+     * board underneath it. This lets Endgame -> Setup start from the standard
+     * full board while Cancel can still restore the pre-Setup position.
+     */
+    public void beginSetupMode(
+            Position source
+    ) {
 
         if (source == null) {
             return;
@@ -313,6 +411,11 @@ public class ChessBoardPanel extends JPanel {
         previewPosition =
                 null;
 
+        setupHistory.clear();
+        setupHistoryIndex =
+                -1;
+        recordSetupSnapshot();
+
         clearSelection();
         cancelDrag();
 
@@ -327,6 +430,10 @@ public class ChessBoardPanel extends JPanel {
 
         setupBoard =
                 null;
+
+        setupHistory.clear();
+        setupHistoryIndex =
+                -1;
 
         clearSelection();
         cancelDrag();
@@ -343,8 +450,18 @@ public class ChessBoardPanel extends JPanel {
             return;
         }
 
+        if (setupSideToMove
+                == color) {
+
+            return;
+        }
+
         setupSideToMove =
                 color;
+
+        if (setupMode) {
+            recordSetupSnapshot();
+        }
 
         repaint();
         fireSetupChanged();
@@ -364,6 +481,8 @@ public class ChessBoardPanel extends JPanel {
 
         setupBoard =
                 new Board();
+
+        recordSetupSnapshot();
 
         clearSelection();
         cancelDrag();
@@ -390,6 +509,8 @@ public class ChessBoardPanel extends JPanel {
                 piece
         );
 
+        recordSetupSnapshot();
+
         repaint();
         fireSetupChanged();
     }
@@ -409,8 +530,108 @@ public class ChessBoardPanel extends JPanel {
                 square
         );
 
+        recordSetupSnapshot();
+
         repaint();
         fireSetupChanged();
+    }
+
+
+    public boolean undoSetupEdit() {
+
+        return applySetupHistoryIndex(
+                setupHistoryIndex - 1
+        );
+    }
+
+
+    public boolean redoSetupEdit() {
+
+        return applySetupHistoryIndex(
+                setupHistoryIndex + 1
+        );
+    }
+
+
+    public boolean resetSetupEditsToStart() {
+
+        return applySetupHistoryIndex(
+                0
+        );
+    }
+
+
+    public boolean restoreLatestSetupEdit() {
+
+        return applySetupHistoryIndex(
+                setupHistory.size() - 1
+        );
+    }
+
+
+    private void recordSetupSnapshot() {
+
+        if (!setupMode
+                || setupBoard == null) {
+
+            return;
+        }
+
+        while (setupHistory.size()
+                > setupHistoryIndex + 1) {
+
+            setupHistory.remove(
+                    setupHistory.size() - 1
+            );
+        }
+
+        setupHistory.add(
+                new SetupSnapshot(
+                        setupBoard,
+                        setupSideToMove
+                )
+        );
+
+        setupHistoryIndex =
+                setupHistory.size() - 1;
+    }
+
+
+    private boolean applySetupHistoryIndex(
+            int targetIndex
+    ) {
+
+        if (!setupMode
+                || setupBoard == null
+                || targetIndex < 0
+                || targetIndex >= setupHistory.size()
+                || targetIndex == setupHistoryIndex) {
+
+            return false;
+        }
+
+        SetupSnapshot snapshot =
+                setupHistory.get(
+                        targetIndex
+                );
+
+        setupBoard =
+                new Board(
+                        snapshot.board
+                );
+
+        setupSideToMove =
+                snapshot.sideToMove;
+
+        setupHistoryIndex =
+                targetIndex;
+
+        clearSelection();
+        cancelDrag();
+        repaint();
+        fireSetupChanged();
+
+        return true;
     }
 
 
@@ -449,6 +670,10 @@ public class ChessBoardPanel extends JPanel {
                         Map.of()
                 );
 
+        validateSetupPositionLegality(
+                temporary
+        );
+
         Map<PositionKey, Integer>
                 repetitionCounts =
                 new HashMap<>();
@@ -477,6 +702,10 @@ public class ChessBoardPanel extends JPanel {
 
         setupBoard =
                 null;
+
+        setupHistory.clear();
+        setupHistoryIndex =
+                -1;
 
         clearSelection();
         cancelDrag();
@@ -532,6 +761,126 @@ public class ChessBoardPanel extends JPanel {
                             + "and exactly one black king."
             );
         }
+
+        /*
+         * Pawns on the first/eighth rank are not legal chess positions and
+         * would make downstream move generation/promotion semantics ambiguous.
+         */
+        for (int file = 0; file < BOARD_SIZE; file++) {
+
+            Piece firstRank =
+                    setupBoard.getPiece(
+                            new Square(
+                                    file,
+                                    0
+                            )
+                    );
+
+            Piece eighthRank =
+                    setupBoard.getPiece(
+                            new Square(
+                                    file,
+                                    7
+                            )
+                    );
+
+            if ((firstRank != null
+                    && firstRank.type() == PieceType.PAWN)
+                    || (eighthRank != null
+                    && eighthRank.type() == PieceType.PAWN)) {
+
+                throw new IllegalArgumentException(
+                        "A pawn cannot be placed on rank 1 or rank 8."
+                );
+            }
+        }
+    }
+
+
+    /**
+     * Setup accepts arbitrary legal positions, not arbitrary impossible board
+     * diagrams. The side that moved previously may not have left its own king
+     * in check. Without this guard, a position such as White-to-move with the
+     * black king already attacked can let the search walk into a king-capture
+     * state and later fail with "King not found".
+     */
+    private void validateSetupPositionLegality(
+            Position position
+    ) {
+
+        Color previousMover =
+                position.getSideToMove()
+                        .opposite();
+
+        Square previousKing =
+                findKing(
+                        position.getBoard(),
+                        previousMover
+                );
+
+        if (previousKing == null) {
+
+            throw new IllegalArgumentException(
+                    "A setup position must contain both kings."
+            );
+        }
+
+        if (attackDetector.isSquareAttacked(
+                position.getBoard(),
+                previousKing,
+                position.getSideToMove()
+        )) {
+
+            throw new IllegalArgumentException(
+                    "Illegal setup position: "
+                            + displayColor(previousMover)
+                            + " king is already in check while "
+                            + displayColor(position.getSideToMove())
+                            + " is to move. Change the side to move or reposition the pieces."
+            );
+        }
+    }
+
+
+    private Square findKing(
+            Board board,
+            Color color
+    ) {
+
+        for (int rank = 0; rank < BOARD_SIZE; rank++) {
+            for (int file = 0; file < BOARD_SIZE; file++) {
+
+                Square square =
+                        new Square(
+                                file,
+                                rank
+                        );
+
+                Piece piece =
+                        board.getPiece(
+                                square
+                        );
+
+                if (piece != null
+                        && piece.color() == color
+                        && piece.type() == PieceType.KING) {
+
+                    return square;
+                }
+            }
+        }
+
+        return null;
+    }
+
+
+    private String displayColor(
+            Color color
+    ) {
+
+        return color == Color.WHITE
+                ? "White"
+                : "Black";
     }
 
 
@@ -584,6 +933,28 @@ public class ChessBoardPanel extends JPanel {
     }
 
 
+    private static final class SetupSnapshot {
+
+        private final Board board;
+        private final Color sideToMove;
+
+
+        private SetupSnapshot(
+                Board board,
+                Color sideToMove
+        ) {
+
+            this.board =
+                    new Board(
+                            board
+                    );
+
+            this.sideToMove =
+                    sideToMove;
+        }
+    }
+
+
     // =========================================================
     // Position-change listener
     // =========================================================
@@ -600,9 +971,54 @@ public class ChessBoardPanel extends JPanel {
     // Mouse interaction
     // =========================================================
 
+    private void handleMouseMoved(
+            MouseEvent event
+    ) {
+
+        if (!hasPendingPromotion()) {
+
+            if (hoveredPromotionChoice != -1) {
+
+                hoveredPromotionChoice =
+                        -1;
+
+                repaint();
+            }
+
+            return;
+        }
+
+
+        int newHover =
+                getPromotionChoiceIndex(
+                        event.getX(),
+                        event.getY()
+                );
+
+
+        if (newHover
+                != hoveredPromotionChoice) {
+
+            hoveredPromotionChoice =
+                    newHover;
+
+            repaint();
+        }
+    }
+
+
     private void handleMousePressed(
             MouseEvent event
     ) {
+
+        if (hasPendingPromotion()) {
+
+            handlePromotionClick(
+                    event
+            );
+
+            return;
+        }
 
         Square clickedSquare =
                 getSquareFromMouse(
@@ -692,6 +1108,10 @@ public class ChessBoardPanel extends JPanel {
             MouseEvent event
     ) {
 
+        if (hasPendingPromotion()) {
+            return;
+        }
+
         if (dragSourceSquare == null
                 || draggedPiece == null) {
             return;
@@ -740,6 +1160,10 @@ public class ChessBoardPanel extends JPanel {
             MouseEvent event
     ) {
 
+        if (hasPendingPromotion()) {
+            return;
+        }
+
         if (!dragging
                 || dragSourceSquare == null
                 || draggedPiece == null) {
@@ -770,6 +1194,8 @@ public class ChessBoardPanel extends JPanel {
                         draggedPiece
                 );
             }
+
+            recordSetupSnapshot();
 
             clearSelection();
             cancelDrag();
@@ -987,25 +1413,9 @@ public class ChessBoardPanel extends JPanel {
             Square destination
     ) {
 
-        for (Move move :
-                selectedLegalMoves) {
+        List<Move> destinationMoves =
+                new ArrayList<>();
 
-            if (move.to().equals(
-                    destination
-            )) {
-
-                /*
-                 * If several promotion moves share the destination,
-                 * dragging/clicking defaults to queen promotion.
-                 */
-                if (!move.isPromotion()
-                        || move.promotion()
-                        == PieceType.QUEEN) {
-
-                    return move;
-                }
-            }
-        }
 
         for (Move move :
                 selectedLegalMoves) {
@@ -1013,9 +1423,42 @@ public class ChessBoardPanel extends JPanel {
             if (move.to().equals(
                     destination
             )) {
-                return move;
+
+                destinationMoves.add(
+                        move
+                );
             }
         }
+
+
+        if (destinationMoves.isEmpty()) {
+            return null;
+        }
+
+
+        if (destinationMoves.size() == 1
+                || !destinationMoves.get(0)
+                .isPromotion()) {
+
+            return destinationMoves.get(0);
+        }
+
+
+        /*
+         * Do not execute a promotion yet.  Hold all legal promotion
+         * variants and let the board overlay collect the player's choice.
+         */
+        pendingPromotionMoves =
+                new ArrayList<>(
+                        destinationMoves
+                );
+
+        pendingPromotionSquare =
+                destination;
+
+        clearSelection();
+        cancelDrag();
+        repaint();
 
         return null;
     }
@@ -1034,6 +1477,315 @@ public class ChessBoardPanel extends JPanel {
         return findMoveTo(
                 destination
         );
+    }
+
+
+    // =========================================================
+    // In-board promotion picker
+    // =========================================================
+
+    private boolean hasPendingPromotion() {
+
+        return pendingPromotionSquare != null
+                && pendingPromotionMoves != null
+                && !pendingPromotionMoves.isEmpty();
+    }
+
+
+    private void clearPendingPromotion() {
+
+        pendingPromotionSquare =
+                null;
+
+        hoveredPromotionChoice =
+                -1;
+
+        if (pendingPromotionMoves == null) {
+
+            pendingPromotionMoves =
+                    new ArrayList<>();
+
+        } else {
+
+            pendingPromotionMoves.clear();
+        }
+    }
+
+
+    private void handlePromotionClick(
+            MouseEvent event
+    ) {
+
+        if (!hasPendingPromotion()) {
+            return;
+        }
+
+
+        int index =
+                getPromotionChoiceIndex(
+                        event.getX(),
+                        event.getY()
+                );
+
+
+        if (index < 0
+                || index >= 4) {
+
+            /*
+             * Keep the picker open until one of its pieces is chosen.
+             */
+            return;
+        }
+
+
+        PieceType chosenType =
+                switch (index) {
+                    case 0 -> PieceType.QUEEN;
+                    case 1 -> PieceType.ROOK;
+                    case 2 -> PieceType.BISHOP;
+                    case 3 -> PieceType.KNIGHT;
+                    default -> throw new IllegalStateException();
+                };
+
+
+        Move chosenMove =
+                null;
+
+
+        for (Move move :
+                pendingPromotionMoves) {
+
+            if (move.isPromotion()
+                    && move.promotion()
+                    == chosenType) {
+
+                chosenMove =
+                        move;
+
+                break;
+            }
+        }
+
+
+        if (chosenMove == null) {
+            return;
+        }
+
+
+        clearPendingPromotion();
+
+        executeMove(
+                chosenMove
+        );
+    }
+
+
+    /*
+     * The four choices are displayed as a vertical strip on the promotion
+     * file, extending inward from the final rank.  This is the familiar
+     * chess-site interaction: Q, R, B, N appear directly on the board.
+     */
+    private int getPromotionChoiceIndex(
+            int mouseX,
+            int mouseY
+    ) {
+
+        if (!hasPendingPromotion()) {
+            return -1;
+        }
+
+
+        int file =
+                displayFile(pendingPromotionSquare.file());
+
+        int destinationDisplayRank =
+                displayRank(pendingPromotionSquare.rank());
+
+
+        int clickedFile =
+                mouseX / SQUARE_SIZE;
+
+        int clickedDisplayRank =
+                mouseY / SQUARE_SIZE;
+
+
+        if (clickedFile != file) {
+            return -1;
+        }
+
+
+        boolean promotingToTop =
+                destinationDisplayRank == 0;
+
+
+        int index =
+                promotingToTop
+                        ? clickedDisplayRank
+                        : 7 - clickedDisplayRank;
+
+
+        return index >= 0 && index < 4
+                ? index
+                : -1;
+    }
+
+
+    private void drawPromotionPicker(
+            Graphics2D g2
+    ) {
+
+        if (!hasPendingPromotion()) {
+            return;
+        }
+
+
+        Position displayed =
+                getDisplayedPosition();
+
+        if (displayed == null) {
+            return;
+        }
+
+
+        /*
+         * The moving pawn is still on its source square because the move
+         * has not been committed yet.  Its color determines which glyphs
+         * belong in the picker.
+         */
+        Color promotionColor =
+                displayed.getSideToMove();
+
+
+        PieceType[] choices = {
+                PieceType.QUEEN,
+                PieceType.ROOK,
+                PieceType.BISHOP,
+                PieceType.KNIGHT
+        };
+
+
+        int file =
+                displayFile(pendingPromotionSquare.file());
+
+        int destinationDisplayRank =
+                displayRank(pendingPromotionSquare.rank());
+
+        boolean promotingToTop =
+                destinationDisplayRank == 0;
+
+
+        Font font =
+                new Font(
+                        Font.SERIF,
+                        Font.PLAIN,
+                        58
+                );
+
+        g2.setFont(
+                font
+        );
+
+        FontMetrics metrics =
+                g2.getFontMetrics();
+
+
+        for (int index = 0;
+             index < choices.length;
+             index++) {
+
+            int displayRank =
+                    promotingToTop
+                            ? index
+                            : 7 - index;
+
+            int x =
+                    file * SQUARE_SIZE;
+
+            int y =
+                    displayRank * SQUARE_SIZE;
+
+
+            /*
+             * Keep the selector integrated with the board.  The tile under
+             * the pointer brightens and receives a stronger outline so the
+             * player always knows which promotion will be chosen.
+             */
+            boolean hovered =
+                    index
+                            == hoveredPromotionChoice;
+
+
+            g2.setColor(
+                    hovered
+                            ? new java.awt.Color(
+                            255,
+                            255,
+                            255,
+                            252
+                    )
+                            : new java.awt.Color(
+                            245,
+                            245,
+                            245,
+                            245
+                    )
+            );
+
+            g2.fillRect(
+                    x,
+                    y,
+                    SQUARE_SIZE,
+                    SQUARE_SIZE
+            );
+
+
+            g2.setColor(
+                    hovered
+                            ? new java.awt.Color(
+                            45,
+                            45,
+                            45,
+                            220
+                    )
+                            : new java.awt.Color(
+                            80,
+                            80,
+                            80,
+                            150
+                    )
+            );
+
+            g2.setStroke(
+                    new BasicStroke(
+                            hovered
+                                    ? 3.0f
+                                    : 1.0f
+                    )
+            );
+
+            g2.drawRect(
+                    x + (hovered ? 1 : 0),
+                    y + (hovered ? 1 : 0),
+                    SQUARE_SIZE - (hovered ? 3 : 1),
+                    SQUARE_SIZE - (hovered ? 3 : 1)
+            );
+
+
+            Piece piece =
+                    new Piece(
+                            choices[index],
+                            promotionColor
+                    );
+
+
+            drawPieceCentered(
+                    g2,
+                    piece,
+                    x + SQUARE_SIZE / 2,
+                    y + SQUARE_SIZE / 2,
+                    metrics
+            );
+        }
     }
 
 
@@ -1109,27 +1861,54 @@ public class ChessBoardPanel extends JPanel {
             int mouseY
     ) {
 
-        int file =
+        int displayFile =
                 mouseX / SQUARE_SIZE;
 
         int displayRank =
                 mouseY / SQUARE_SIZE;
 
-        if (file < 0
-                || file >= BOARD_SIZE
+        if (displayFile < 0
+                || displayFile >= BOARD_SIZE
                 || displayRank < 0
                 || displayRank >= BOARD_SIZE) {
 
             return null;
         }
 
+        int modelFile =
+                flipped ? 7 - displayFile : displayFile;
+
         int modelRank =
-                7 - displayRank;
+                flipped ? displayRank : 7 - displayRank;
 
         return new Square(
-                file,
+                modelFile,
                 modelRank
         );
+    }
+
+
+    /**
+     * Dims the board while an exact tablebase position is being loaded.
+     * The scrim is painted inside ChessBoardPanel rather than by a sibling
+     * component so its bounds are mathematically identical to the board.
+     */
+    public void setLoadingDimmed(
+            boolean loadingDimmed
+    ) {
+        if (this.loadingDimmed == loadingDimmed) {
+            return;
+        }
+
+        this.loadingDimmed =
+                loadingDimmed;
+
+        repaint();
+    }
+
+
+    public boolean isLoadingDimmed() {
+        return loadingDimmed;
     }
 
 
@@ -1189,6 +1968,10 @@ public class ChessBoardPanel extends JPanel {
                 g2
         );
 
+        drawPromotionPicker(
+                g2
+        );
+
         if (dragging
                 && draggedPiece != null) {
 
@@ -1197,6 +1980,19 @@ public class ChessBoardPanel extends JPanel {
                     draggedPiece,
                     dragX,
                     dragY
+            );
+        }
+
+        if (loadingDimmed) {
+            g2.setColor(
+                    LOADING_OVERLAY
+            );
+
+            g2.fillRect(
+                    0,
+                    0,
+                    BOARD_SIZE * SQUARE_SIZE,
+                    BOARD_SIZE * SQUARE_SIZE
             );
         }
 
@@ -1246,14 +2042,17 @@ public class ChessBoardPanel extends JPanel {
         }
 
         int displayRank =
-                7 - selectedSquare.rank();
+                displayRank(selectedSquare.rank());
+
+        int displayFile =
+                displayFile(selectedSquare.file());
 
         g2.setColor(
                 SELECTED_SQUARE
         );
 
         g2.fillRect(
-                selectedSquare.file()
+                displayFile
                         * SQUARE_SIZE,
                 displayRank
                         * SQUARE_SIZE,
@@ -1288,10 +2087,13 @@ public class ChessBoardPanel extends JPanel {
                     move.to();
 
             int displayRank =
-                    7 - destination.rank();
+                    displayRank(destination.rank());
+
+            int displayFile =
+                    displayFile(destination.file());
 
             int x =
-                    destination.file()
+                    displayFile
                             * SQUARE_SIZE;
 
             int y =
@@ -1401,9 +2203,9 @@ public class ChessBoardPanel extends JPanel {
                 drawPieceCentered(
                         g2,
                         piece,
-                        file * SQUARE_SIZE
+                        displayFile(file) * SQUARE_SIZE
                                 + SQUARE_SIZE / 2,
-                        (7 - rank) * SQUARE_SIZE
+                        displayRank(rank) * SQUARE_SIZE
                                 + SQUARE_SIZE / 2,
                         metrics
                 );

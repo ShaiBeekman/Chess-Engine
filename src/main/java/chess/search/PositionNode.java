@@ -198,7 +198,7 @@ public class PositionNode {
     }
 
 
-    public void addIncomingNode(
+    public boolean addIncomingNode(
             PositionNode parent
     ) {
 
@@ -210,7 +210,7 @@ public class PositionNode {
         }
 
 
-        incomingNodes.add(
+        return incomingNodes.add(
                 parent
         );
     }

@@ -1,5 +1,6 @@
 package main.java.chess.evaluation;
 
+import main.java.chess.endgame.ExactEndgameTablebase;
 import main.java.chess.model.Board;
 import main.java.chess.model.Color;
 import main.java.chess.model.Piece;
@@ -8,17 +9,63 @@ import main.java.chess.model.Position;
 import main.java.chess.model.Square;
 import main.java.chess.rules.MoveGenerator;
 
+
 public class PositionEvaluator {
+
+    /*
+     * Exact tablebase scores must dominate every normal positional or
+     * material evaluation.
+     */
+    public static final int TABLEBASE_MATE_SCORE =
+            1_000_000;
+
 
     /*
      * Positional weights are deliberately
      * much smaller than material values.
      */
-    private static final int MOBILITY_WEIGHT = 2;
+    private static final int MOBILITY_WEIGHT =
+            2;
 
-    private static final int DEVELOPMENT_BONUS = 15;
+    private static final int DEVELOPMENT_BONUS =
+            15;
 
-    private static final int CENTER_OCCUPATION_BONUS = 15;
+    private static final int CENTER_OCCUPATION_BONUS =
+            15;
+
+
+    private final ExactEndgameTablebase
+            exactEndgameTablebase;
+
+
+    /**
+     * Normal engine constructor.
+     *
+     * This does NOT load all twenty four-piece assets.
+     *
+     * The underlying service loads one material table lazily the first
+     * time that particular material family is encountered.
+     */
+    public PositionEvaluator() {
+
+        this(
+                ExactEndgameTablebase.tierZeroCatalog()
+        );
+    }
+
+
+    /**
+     * Dependency-injection constructor.
+     *
+     * Useful for testing and for future engine configurations.
+     */
+    public PositionEvaluator(
+            ExactEndgameTablebase exactEndgameTablebase
+    ) {
+
+        this.exactEndgameTablebase =
+                exactEndgameTablebase;
+    }
 
 
     // =========================
@@ -28,6 +75,22 @@ public class PositionEvaluator {
     public int evaluate(
             Position position
     ) {
+
+        /*
+         * Exact endgame knowledge has priority over heuristic
+         * evaluation.
+         */
+        Integer exactScore =
+                evaluateExactEndgame(
+                        position
+                );
+
+
+        if (exactScore != null) {
+
+            return exactScore;
+        }
+
 
         int material =
                 evaluateMaterial(
@@ -49,10 +112,112 @@ public class PositionEvaluator {
                         position
                 );
 
+
         return material
                 + mobility
                 + development
                 + center;
+    }
+
+
+    // =========================
+    // Exact endgame
+    // =========================
+
+    /**
+     * Return an exact White-centric score when tablebase information is
+     * available.
+     *
+     * null means:
+     *
+     *     no exact tablebase supports this position
+     *
+     * and normal heuristic evaluation should continue.
+     *
+     *
+     * Tablebase WDL is from the side-to-move perspective.
+     *
+     * PositionEvaluator scores are from White's perspective:
+     *
+     *     positive = good for White
+     *     negative = good for Black
+     */
+    private Integer evaluateExactEndgame(
+            Position position
+    ) {
+
+        if (exactEndgameTablebase == null) {
+
+            return null;
+        }
+
+
+        ExactEndgameTablebase.Probe probe =
+                exactEndgameTablebase.probe(
+                        position
+                );
+
+
+        if (probe.outcome()
+                == ExactEndgameTablebase.Outcome.UNSUPPORTED) {
+
+            return null;
+        }
+
+
+        if (probe.outcome()
+                == ExactEndgameTablebase.Outcome.DRAW) {
+
+            return 0;
+        }
+
+
+        int distance =
+                Math.max(
+                        0,
+                        probe.mateDistance()
+                );
+
+
+        /*
+         * Smaller DTM is preferable when winning.
+         *
+         * When losing, larger DTM is preferable because it delays the
+         * forced mate.
+         */
+        int sideToMoveScore =
+                switch (probe.outcome()) {
+
+                    case WIN ->
+                            TABLEBASE_MATE_SCORE
+                                    - distance;
+
+                    case LOSS ->
+                            -TABLEBASE_MATE_SCORE
+                                    + distance;
+
+                    case DRAW ->
+                            0;
+
+                    case UNSUPPORTED ->
+                            throw new IllegalStateException(
+                                    "UNSUPPORTED tablebase outcome reached exact scoring."
+                            );
+                };
+
+
+        /*
+         * Convert side-to-move perspective into the evaluator's
+         * White-centric perspective.
+         */
+        if (position.getSideToMove()
+                == Color.WHITE) {
+
+            return sideToMoveScore;
+        }
+
+
+        return -sideToMoveScore;
     }
 
 
@@ -67,7 +232,9 @@ public class PositionEvaluator {
         Board board =
                 position.getBoard();
 
-        int score = 0;
+        int score =
+                0;
+
 
         for (int file = 0;
              file < 8;
@@ -83,31 +250,39 @@ public class PositionEvaluator {
                                 rank
                         );
 
+
                 Piece piece =
                         board.getPiece(
                                 square
                         );
 
+
                 if (piece == null) {
+
                     continue;
                 }
+
 
                 int value =
                         getPieceValue(
                                 piece.type()
                         );
 
+
                 if (piece.color()
                         == Color.WHITE) {
 
-                    score += value;
+                    score +=
+                            value;
 
                 } else {
 
-                    score -= value;
+                    score -=
+                            value;
                 }
             }
         }
+
 
         return score;
     }
@@ -134,14 +309,6 @@ public class PositionEvaluator {
             case QUEEN ->
                     900;
 
-            /*
-             * The king does not receive a
-             * material value.
-             *
-             * Checkmate will eventually be
-             * handled separately and outrank
-             * every numerical evaluation.
-             */
             case KING ->
                     0;
         };
@@ -159,9 +326,7 @@ public class PositionEvaluator {
         MoveGenerator generator =
                 new MoveGenerator();
 
-        /*
-         * Current side's legal mobility.
-         */
+
         int currentMobility =
                 generator
                         .generateLegalMoves(
@@ -169,31 +334,34 @@ public class PositionEvaluator {
                         )
                         .size();
 
+
+        Color oppositeColor =
+                position.getSideToMove()
+                        .opposite();
+
+
         /*
-         * Create an equivalent position
-         * with the opposite side to move
-         * so we can estimate the opponent's
-         * mobility as well.
+         * Preserve the position's rule metadata rather than using the
+         * two-argument Position constructor, because that constructor
+         * assumes all four castling rights are available.
+         *
+         * Repetition history does not affect this temporary mobility
+         * estimate.
          */
-        Color oppositeColor;
-
-        if (position.getSideToMove()
-                == Color.WHITE) {
-
-            oppositeColor =
-                    Color.BLACK;
-
-        } else {
-
-            oppositeColor =
-                    Color.WHITE;
-        }
-
         Position oppositePosition =
                 new Position(
                         position.getBoard(),
-                        oppositeColor
+                        oppositeColor,
+                        position.canWhiteCastleKingSide(),
+                        position.canWhiteCastleQueenSide(),
+                        position.canBlackCastleKingSide(),
+                        position.canBlackCastleQueenSide(),
+                        position.getEnPassantTarget(),
+                        position.getHalfmoveClock(),
+                        position.getFullmoveNumber(),
+                        java.util.Map.of()
                 );
+
 
         int oppositeMobility =
                 generator
@@ -202,8 +370,11 @@ public class PositionEvaluator {
                         )
                         .size();
 
+
         int whiteMobility;
+
         int blackMobility;
+
 
         if (position.getSideToMove()
                 == Color.WHITE) {
@@ -222,6 +393,7 @@ public class PositionEvaluator {
             whiteMobility =
                     oppositeMobility;
         }
+
 
         return (
                 whiteMobility
@@ -241,12 +413,10 @@ public class PositionEvaluator {
         Board board =
                 position.getBoard();
 
-        int score = 0;
+        int score =
+                0;
 
 
-        /*
-         * White knights.
-         */
         score += developmentScore(
                 board,
                 "b1",
@@ -262,9 +432,6 @@ public class PositionEvaluator {
         );
 
 
-        /*
-         * White bishops.
-         */
         score += developmentScore(
                 board,
                 "c1",
@@ -280,9 +447,6 @@ public class PositionEvaluator {
         );
 
 
-        /*
-         * Black knights.
-         */
         score -= developmentScore(
                 board,
                 "b8",
@@ -298,9 +462,6 @@ public class PositionEvaluator {
         );
 
 
-        /*
-         * Black bishops.
-         */
         score -= developmentScore(
                 board,
                 "c8",
@@ -314,6 +475,7 @@ public class PositionEvaluator {
                 PieceType.BISHOP,
                 Color.BLACK
         );
+
 
         return score;
     }
@@ -331,29 +493,25 @@ public class PositionEvaluator {
                         startingSquare
                 );
 
+
         Piece piece =
                 board.getPiece(
                         square
                 );
 
-        /*
-         * If the original minor piece is no
-         * longer sitting on its starting
-         * square, regard it as developed.
-         *
-         * This is intentionally simple for
-         * our first positional evaluator.
-         */
+
         if (piece == null) {
 
             return DEVELOPMENT_BONUS;
         }
+
 
         if (piece.type() != type
                 || piece.color() != color) {
 
             return DEVELOPMENT_BONUS;
         }
+
 
         return 0;
     }
@@ -370,7 +528,9 @@ public class PositionEvaluator {
         Board board =
                 position.getBoard();
 
-        int score = 0;
+        int score =
+                0;
+
 
         String[] centerSquares = {
                 "d4",
@@ -378,6 +538,7 @@ public class PositionEvaluator {
                 "d5",
                 "e5"
         };
+
 
         for (String squareName :
                 centerSquares) {
@@ -387,14 +548,18 @@ public class PositionEvaluator {
                             squareName
                     );
 
+
             Piece piece =
                     board.getPiece(
                             square
                     );
 
+
             if (piece == null) {
+
                 continue;
             }
+
 
             if (piece.color()
                     == Color.WHITE) {
@@ -408,6 +573,7 @@ public class PositionEvaluator {
                         CENTER_OCCUPATION_BONUS;
             }
         }
+
 
         return score;
     }

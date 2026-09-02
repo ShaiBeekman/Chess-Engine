@@ -29,4 +29,8 @@ bin/
 .vscode/
 
 ### Mac OS ###
-.DS_Store
+.DS_Store# Large runtime binaries and generated tablebases
+src/main/java/chess/stockfish/stockfish.exe
+src/main/resources/tablebases/
+tablebases/
+tablebase-test-output/

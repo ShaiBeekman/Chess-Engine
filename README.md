@@ -1,5 +1,9 @@
 # Chess Engine
 
+[![Release](https://img.shields.io/github/v/release/ShaiBeekman/Chess-Engine?label=release)](https://github.com/ShaiBeekman/Chess-Engine/releases/latest)
+![Java](https://img.shields.io/badge/Java-26-orange)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **A Java chess engine built around persistent graph exploration, exact endgame solving, and interactive analysis.**
 
 Unlike a conventional engine centered on a single minimax search tree, this project explores chess positions through a shared canonical `PositionGraph`. Multiple persistent line walkers can encounter the same position from different move orders and reuse the same graph node, allowing transpositions, visit counts, solved-state propagation, and analysis history to accumulate over time.

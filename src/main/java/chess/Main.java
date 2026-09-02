@@ -9,14 +9,6 @@ import main.java.chess.model.PieceType;
 import main.java.chess.model.Position;
 import main.java.chess.model.Square;
 
-import main.java.chess.tests.GraphInvariantTestHarness;
-import main.java.chess.tests.IncrementalPropagationTestHarness;
-import main.java.chess.tests.TacticalSolvingTestHarness;
-import main.java.chess.tests.ExplorationFairnessTestHarness;
-import main.java.chess.tests.FenCodecTestHarness;
-import main.java.chess.tests.SpecialRuleTestHarness;
-import main.java.chess.tests.TerminalStateTestHarness;
-
 import javax.swing.SwingUtilities;
 
 public class Main {
@@ -29,46 +21,16 @@ public class Main {
                 createStartingPosition();
 
 
-        // =====================================================
-        // v1.0 correctness suite
-        // =====================================================
-
-        TerminalStateTestHarness.run(
-                startingPosition
-        );
-
-
-        SpecialRuleTestHarness.run(
-                startingPosition
-        );
-
-
-        GraphInvariantTestHarness.run(
-                startingPosition
-        );
-
-
-        IncrementalPropagationTestHarness.run(
-                startingPosition
-        );
-
-
-        TacticalSolvingTestHarness.run(
-                startingPosition
-        );
-
-
-        ExplorationFairnessTestHarness.run(
-                startingPosition
-        );
-
-
-        FenCodecTestHarness.run();
-
-
         /*
-         * All Swing GUI creation should
-         * occur on Swing's event thread.
+         * Production startup is intentionally lightweight.
+         *
+         * The full v1.0 correctness/regression suite lives behind the
+         * dedicated release verification entry points, including:
+         *
+         *     main.java.chess.release.V1ReleaseRegressionMain
+         *
+         * Normal application startup should only construct the initial
+         * position and launch the Swing GUI.
          */
         SwingUtilities.invokeLater(
                 () -> {

@@ -18,6 +18,11 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
 import java.awt.AWTEvent;
+import java.awt.BorderLayout;
+import java.awt.GridLayout;
+import javax.swing.AbstractButton;
+import javax.swing.JComponent;
+import javax.swing.plaf.basic.BasicButtonUI;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -37,17 +42,8 @@ import java.awt.event.MouseEvent;
 
 
 /**
- * Position-setup controls and draggable piece palette.
- *
- * M68C6E
- *
- * - preserves old compact setup-button appearance
- * - uses solid chess glyphs for both colors
- * - White pieces render solid white
- * - Black pieces render solid black
- * - light mode uses normal light button backgrounds
- * - White pieces receive a subtle dark outline in light mode
- * - palette dragging shows only the piece, never a square
+ * Position-setup controls and draggable chess-piece tiles.
+ * The floating drag ghost remains a piece-only window.
  */
 public class PiecePalettePanel extends JPanel {
 
@@ -55,6 +51,8 @@ public class PiecePalettePanel extends JPanel {
 
     private Runnable analyzeListener;
     private Runnable cancelListener;
+    private JToggleButton whiteSideButton;
+    private JToggleButton blackSideButton;
 
     private java.awt.Color backgroundColor;
     private java.awt.Color foregroundColor;
@@ -164,65 +162,16 @@ public class PiecePalettePanel extends JPanel {
                 false;
 
 
-        setLayout(
-                new BoxLayout(
-                        this,
-                        BoxLayout.Y_AXIS
-                )
-        );
-
-
+        setLayout(new BorderLayout(0, 8));
         rebuildBorder();
-
-
-        add(
-                createTopRow()
-        );
-
-
-        add(
-                Box.createVerticalStrut(
-                        6
-                )
-        );
-
-
-        add(
-                createPieceRow()
-        );
-
+        add(createPieceRow(), BorderLayout.CENTER);
+        add(createTopRow(), BorderLayout.NORTH);
 
         applyTheme(
                 true
         );
 
 
-        /*
-         * ChessWindow's board column is 672 logical pixels wide:
-         *
-         *     20px left inset + 640px board + 12px right inset.
-         *
-         * M73F keeps this palette in a transparent workspace-bottom host so
-         * its width no longer pushes the analysis panel away. Matching that
-         * board-column width also makes the footer visually terminate with the
-         * board instead of extending awkwardly into the analysis area.
-         */
-        Dimension natural =
-                getPreferredSize();
-
-        setPreferredSize(
-                new Dimension(
-                        672,
-                        natural.height
-                )
-        );
-
-        setMaximumSize(
-                new Dimension(
-                        672,
-                        natural.height
-                )
-        );
     }
 
 
@@ -336,75 +285,11 @@ public class PiecePalettePanel extends JPanel {
                 dark;
 
 
-        backgroundColor =
-                dark
-                        ? new java.awt.Color(
-                        19,
-                        27,
-                        35
-                )
-                        : new java.awt.Color(
-                        250,
-                        251,
-                        253
-                );
-
-
-        foregroundColor =
-                dark
-                        ? new java.awt.Color(
-                        242,
-                        244,
-                        247
-                )
-                        : new java.awt.Color(
-                        31,
-                        35,
-                        41
-                );
-
-
-        secondaryForegroundColor =
-                dark
-                        ? new java.awt.Color(
-                        146,
-                        163,
-                        180
-                )
-                        : new java.awt.Color(
-                        100,
-                        110,
-                        122
-                );
-
-
-        borderColor =
-                dark
-                        ? new java.awt.Color(
-                        42,
-                        53,
-                        64
-                )
-                        : new java.awt.Color(
-                        210,
-                        216,
-                        224
-                );
-
-
-        buttonColor =
-                dark
-                        ? new java.awt.Color(
-                        26,
-                        35,
-                        44
-                )
-                        : new java.awt.Color(
-                        244,
-                        246,
-                        249
-                );
-
+        backgroundColor = dark ? new java.awt.Color(14, 23, 30) : new java.awt.Color(242, 244, 247);
+        foregroundColor = dark ? new java.awt.Color(240, 243, 247) : new java.awt.Color(31, 35, 41);
+        secondaryForegroundColor = dark ? new java.awt.Color(177, 199, 219) : new java.awt.Color(100, 107, 117);
+        borderColor = dark ? new java.awt.Color(32, 51, 64) : new java.awt.Color(215, 220, 227);
+        buttonColor = dark ? new java.awt.Color(22, 30, 38) : new java.awt.Color(248, 250, 252);
 
         setBackground(
                 backgroundColor
@@ -425,337 +310,70 @@ public class PiecePalettePanel extends JPanel {
 
 
     private void rebuildBorder() {
-
-        setBorder(
-                BorderFactory.createCompoundBorder(
-                        BorderFactory.createMatteBorder(
-                                1,
-                                0,
-                                0,
-                                0,
-                                borderColor
-                        ),
-                        BorderFactory.createEmptyBorder(
-                                8,
-                                10,
-                                8,
-                                10
-                        )
-                )
-        );
+        setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(borderColor),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
     }
-
-
-    // =========================================================
-    // Top controls
-    // =========================================================
 
     private JPanel createTopRow() {
-
-        JPanel row =
-                new JPanel(
-                        new FlowLayout(
-                                FlowLayout.LEFT,
-                                8,
-                                0
-                        )
-                );
-
-
-        row.setOpaque(
-                false
-        );
-
-
-        JLabel label =
-                new JLabel(
-                        "SETUP POSITION"
-                );
-
-
-        label.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        11
-                )
-        );
-
-
-        label.putClientProperty(
-                "setupLabel",
-                Boolean.TRUE
-        );
-
-
-        row.add(
-                label
-        );
-
-
-        row.add(
-                Box.createHorizontalStrut(
-                        8
-                )
-        );
-
-
-        JToggleButton white =
-                createSideButton(
-                        "White to move",
-                        Color.WHITE
-                );
-
-
-        JToggleButton black =
-                createSideButton(
-                        "Black to move",
-                        Color.BLACK
-                );
-
-
-        ButtonGroup group =
-                new ButtonGroup();
-
-
-        group.add(
-                white
-        );
-
-
-        group.add(
-                black
-        );
-
-
-        if (boardPanel.getSetupSideToMove()
-                == Color.BLACK) {
-
-            black.setSelected(
-                    true
-            );
-
-        } else {
-
-            white.setSelected(
-                    true
-            );
-        }
-
-
-        row.add(
-                white
-        );
-
-
-        row.add(
-                black
-        );
-
-
-        JButton clear =
-                createActionButton(
-                        "Clear"
-                );
-
-
-        clear.addActionListener(
-                event -> {
-
-                    cancelActiveDrag();
-                    boardPanel.clearSetupBoard();
-                }
-        );
-
-
-        row.add(
-                clear
-        );
-
-
-        JButton cancel =
-                createActionButton(
-                        "Cancel"
-                );
-
-
-        cancel.addActionListener(
-                event -> {
-
-                    cancelActiveDrag();
-
-                    if (cancelListener != null) {
-
-                        cancelListener.run();
-                    }
-                }
-        );
-
-
-        row.add(
-                cancel
-        );
-
-
-        JButton analyze =
-                createActionButton(
-                        "Analyze Position"
-                );
-
-
-        analyze.addActionListener(
-                event -> {
-
-                    cancelActiveDrag();
-
-                    if (analyzeListener != null) {
-
-                        analyzeListener.run();
-                    }
-                }
-        );
-
-
-        row.add(
-                analyze
-        );
-
-
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        JPanel title = new JPanel(new GridLayout(2, 1, 0, 2));
+        title.setOpaque(false);
+        JLabel heading = new JLabel("PIECE PALETTE");
+        heading.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        heading.putClientProperty("setupSecondaryLabel", Boolean.TRUE);
+        JLabel help = new JLabel("Drag pieces to the board");
+        help.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        help.putClientProperty("setupSecondaryLabel", Boolean.TRUE);
+        title.add(heading);
+        title.add(help);
+        row.add(title, BorderLayout.CENTER);
+        JButton clear = createActionButton("Clear Board");
+        clear.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        clear.setIcon(new SetupIcon(SetupIcon.Kind.TRASH, 24));
+        clear.setIconTextGap(6);
+        clear.putClientProperty("quietAction", Boolean.TRUE);
+        clear.addActionListener(event -> {
+            cancelActiveDrag();
+            boardPanel.clearSetupBoard();
+        });
+        row.add(clear, BorderLayout.EAST);
         return row;
     }
-
 
     // =========================================================
     // Piece row
     // =========================================================
 
     private JPanel createPieceRow() {
+        JPanel rows = new JPanel(new GridLayout(2, 1, 0, 6));
+        rows.setOpaque(false);
 
-        JPanel row =
-                new JPanel(
-                        new FlowLayout(
-                                FlowLayout.LEFT,
-                                2,
-                                0
-                        )
-                );
-
-
-        row.setOpaque(
-                false
-        );
-
-
-        JLabel instruction =
-                new JLabel(
-                        "Drag a piece onto the board:"
-                );
-
-
-        instruction.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.PLAIN,
-                        11
-                )
-        );
-
-
-        instruction.putClientProperty(
-                "setupLabel",
-                Boolean.TRUE
-        );
-
-
-        row.add(
-                instruction
-        );
-
-
-        for (Color color :
-                new Color[]{
-                        Color.WHITE,
-                        Color.BLACK
-                }) {
-
-
-            JLabel colorLabel =
-                    new JLabel(
-                            color == Color.WHITE
-                                    ? "WHITE"
-                                    : "BLACK"
-                    );
-
-
-            colorLabel.setFont(
-                    new Font(
-                            Font.SANS_SERIF,
-                            Font.BOLD,
-                            10
-                    )
-            );
-
-
-            colorLabel.putClientProperty(
-                    "setupSecondaryLabel",
-                    Boolean.TRUE
-            );
-
-
-            row.add(
-                    Box.createHorizontalStrut(
-                            5
-                    )
-            );
-
-
-            row.add(
-                    colorLabel
-            );
-
-
-            row.add(
-                    Box.createHorizontalStrut(
-                            3
-                    )
-            );
-
-
-            for (PieceType type :
-                    new PieceType[]{
-                            PieceType.KING,
-                            PieceType.QUEEN,
-                            PieceType.ROOK,
-                            PieceType.BISHOP,
-                            PieceType.KNIGHT,
-                            PieceType.PAWN
-                    }) {
-
-
-                Piece piece =
-                        new Piece(
-                                type,
-                                color
-                        );
-
-
-                row.add(
-                        createPieceDragButton(
-                                piece
-                        )
-                );
+        for (Color color : new Color[]{Color.WHITE, Color.BLACK}) {
+            JPanel row = new JPanel(new BorderLayout(8, 0));
+            row.setOpaque(false);
+            JLabel colorLabel = new JLabel(color == Color.WHITE ? "WHITE" : "BLACK");
+            colorLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            colorLabel.putClientProperty("setupSecondaryLabel", Boolean.TRUE);
+            row.add(colorLabel, BorderLayout.WEST);
+            JPanel pieces = new JPanel(new GridLayout(1, 6, 6, 0));
+            pieces.setOpaque(false);
+            for (PieceType type : new PieceType[]{PieceType.PAWN, PieceType.KNIGHT, PieceType.BISHOP,
+                    PieceType.ROOK, PieceType.QUEEN, PieceType.KING}) {
+                pieces.add(createPieceDragButton(new Piece(type, color)));
             }
-
-
-            row.add(
-                    Box.createHorizontalStrut(
-                            8
-                    )
-            );
+            row.add(pieces, BorderLayout.CENTER);
+            rows.add(row);
         }
+        rows.setToolTipText("Drag a piece onto the board.");
+        return rows;
+    }
 
-
-        return row;
+    /** Synchronize presentation after edits/history without changing board state. */
+    void refreshSideToMove() {
+        if (whiteSideButton == null || blackSideButton == null) return;
+        whiteSideButton.setSelected(boardPanel.getSetupSideToMove() != Color.BLACK);
+        blackSideButton.setSelected(boardPanel.getSetupSideToMove() == Color.BLACK);
     }
 
 
@@ -772,39 +390,6 @@ public class PiecePalettePanel extends JPanel {
                 new JToggleButton(
                         text
                 );
-
-
-        /*
-         * Keep White/Black as a real ButtonGroup selection so setup-side
-         * state remains correct, but do not let the platform Look & Feel
-         * paint the selected toggle with its own bright highlight color.
-         *
-         * The selected fill always follows this palette's normal buttonColor,
-         * so White to move / Black to move keep the same compact appearance
-         * as Clear / Cancel / Analyze Position in both themes.
-         */
-        button.setUI(
-                new javax.swing.plaf.basic.BasicToggleButtonUI() {
-
-                    @Override
-                    protected void paintButtonPressed(
-                            java.awt.Graphics graphics,
-                            javax.swing.AbstractButton abstractButton
-                    ) {
-
-                        graphics.setColor(
-                                abstractButton.getBackground()
-                        );
-
-                        graphics.fillRect(
-                                0,
-                                0,
-                                abstractButton.getWidth(),
-                                abstractButton.getHeight()
-                        );
-                    }
-                }
-        );
 
 
         styleControl(
@@ -860,27 +445,19 @@ public class PiecePalettePanel extends JPanel {
                 );
 
 
-        /*
-         * M73G:
-         *
-         * Keep the original one-line palette layout, but make only the
-         * draggable piece buttons slightly more compact so the complete WHITE
-         * + BLACK piece set fits beneath the board instead of hanging into the
-         * analysis column.
-         */
         button.setFont(
                 new Font(
                         Font.SERIF,
                         Font.PLAIN,
-                        22
+                        34
                 )
         );
 
 
         Dimension size =
                 new Dimension(
-                        29,
-                        29
+                        46,
+                        42
                 );
 
 
@@ -889,9 +466,7 @@ public class PiecePalettePanel extends JPanel {
         );
 
 
-        button.setMinimumSize(
-                size
-        );
+        button.setMinimumSize(new Dimension(0, 0));
 
 
         button.setMaximumSize(
@@ -935,6 +510,9 @@ public class PiecePalettePanel extends JPanel {
                         .toLowerCase()
         );
 
+
+        button.getAccessibleContext().setAccessibleName(button.getToolTipText());
+        button.setRolloverEnabled(true);
 
         button.putClientProperty(
                 "setupControl",
@@ -1262,40 +840,53 @@ public class PiecePalettePanel extends JPanel {
     // Setup control styling
     // =========================================================
 
-    private void styleControl(
-            javax.swing.AbstractButton button
-    ) {
+    private void styleControl(AbstractButton button) {
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        button.setFocusPainted(false);
+        button.setFocusable(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.putClientProperty("setupControl", Boolean.TRUE);
+        button.putClientProperty("primaryAction", "Analyze Position".equals(button.getText()));
+        button.setRolloverEnabled(true);
+        button.setUI(new BasicButtonUI() {
+            @Override
+            public void paint(Graphics graphics, JComponent component) {
+                AbstractButton control = (AbstractButton) component;
+                boolean primary = Boolean.TRUE.equals(control.getClientProperty("primaryAction"));
+                boolean selected = control.isSelected();
+                java.awt.Color accent = darkTheme
+                        ? new java.awt.Color(63, 151, 255) : new java.awt.Color(64, 100, 145);
+                java.awt.Color fill = primary
+                        ? (darkTheme ? new java.awt.Color(26, 47, 69) : new java.awt.Color(64, 100, 145))
+                        : selected
+                        ? (darkTheme ? new java.awt.Color(20, 38, 54) : new java.awt.Color(238, 244, 252))
+                        : buttonColor;
+                if (control.getModel().isPressed() && control.getModel().isArmed()) {
+                    fill = fill.darker();
+                } else if (control.getModel().isRollover()) {
+                    fill = primary ? fill.brighter()
+                            : (darkTheme ? new java.awt.Color(29, 40, 51) : new java.awt.Color(232, 238, 245));
+                }
+                Graphics2D g = (Graphics2D) graphics.create();
+                try {
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setColor(fill);
+                    if (!Boolean.TRUE.equals(control.getClientProperty("quietAction")) || control.getModel().isRollover())
+                        g.fillRect(0, 0, control.getWidth(), control.getHeight());
+                    g.setColor(selected ? accent : primary ? fill.brighter() : borderColor);
+                    if (!Boolean.TRUE.equals(control.getClientProperty("quietAction")) || control.hasFocus())
+                        g.drawRect(0, 0, control.getWidth() - 1, control.getHeight() - 1);
+                } finally {
+                    g.dispose();
+                }
+                super.paint(graphics, component);
+            }
 
-        button.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        11
-                )
-        );
-
-
-        button.setFocusPainted(
-                false
-        );
-
-
-        button.setFocusable(
-                false
-        );
-
-
-        button.setCursor(
-                Cursor.getPredefinedCursor(
-                        Cursor.HAND_CURSOR
-                )
-        );
-
-
-        button.putClientProperty(
-                "setupControl",
-                Boolean.TRUE
-        );
+            @Override
+            protected void paintButtonPressed(Graphics graphics, AbstractButton control) {
+                // The pressed surface is painted above.
+            }
+        });
     }
 
 
@@ -1346,36 +937,10 @@ public class PiecePalettePanel extends JPanel {
             )) {
 
 
-                /*
-                 * M68C6E:
-                 *
-                 * Every setup button now uses the SAME theme background.
-                 *
-                 * No special dark square behind White pieces in light mode.
-                 */
-                button.setBackground(
-                        buttonColor
-                );
-
-
-                button.setBorder(
-                        BorderFactory.createLineBorder(
-                                borderColor,
-                                1,
-                                true
-                        )
-                );
-
-
-                button.setOpaque(
-                        true
-                );
-
-
-                button.setContentAreaFilled(
-                        true
-                );
-
+                button.setBackground(buttonColor);
+                button.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
+                button.setOpaque(false);
+                button.setContentAreaFilled(false);
 
                 boolean palettePiece =
                         Boolean.TRUE.equals(
@@ -1395,12 +960,10 @@ public class PiecePalettePanel extends JPanel {
 
 
                 } else {
-
-
-                    button.setForeground(
-                            foregroundColor
-                    );
+                    button.setForeground(Boolean.TRUE.equals(button.getClientProperty("primaryAction"))
+                            ? java.awt.Color.WHITE : foregroundColor);
                 }
+
             }
 
 
@@ -1419,183 +982,62 @@ public class PiecePalettePanel extends JPanel {
     // Custom solid piece button
     // =========================================================
 
-    /**
-     * Paints a solid chess glyph without changing the normal JButton
-     * background.
-     *
-     * In light mode White pieces receive a tiny dark outline so a genuinely
-     * white glyph remains visible on the normal light setup-button surface.
-     */
-    private static final class SolidPieceButton
-            extends JButton {
-
+    /** Tactile tiles use solid surfaces; only the glyph is used by the drag ghost. */
+    private static final class SolidPieceButton extends JButton {
         private final String symbol;
         private final Color pieceColor;
-
         private boolean darkTheme;
 
-
-        private SolidPieceButton(
-                String symbol,
-                Color pieceColor
-        ) {
-
+        private SolidPieceButton(String symbol, Color pieceColor) {
             super("");
-
-            this.symbol =
-                    symbol;
-
-            this.pieceColor =
-                    pieceColor;
-
-            this.darkTheme =
-                    true;
+            this.symbol = symbol;
+            this.pieceColor = pieceColor;
+            this.darkTheme = true;
         }
 
-
-        private void setDarkTheme(
-                boolean darkTheme
-        ) {
-
-            this.darkTheme =
-                    darkTheme;
-
+        private void setDarkTheme(boolean darkTheme) {
+            this.darkTheme = darkTheme;
             repaint();
         }
 
-
         @Override
-        protected void paintComponent(
-                Graphics graphics
-        ) {
-
-            /*
-             * Let JButton paint its normal themed background first.
-             */
-            super.paintComponent(
-                    graphics
-            );
-
-
-            Graphics2D g2 =
-                    (Graphics2D) graphics.create();
-
-
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D) graphics.create();
             try {
-
-                g2.setRenderingHint(
-                        RenderingHints.KEY_TEXT_ANTIALIASING,
-                        RenderingHints.VALUE_TEXT_ANTIALIAS_ON
-                );
-
-
-                g2.setFont(
-                        getFont()
-                );
-
-
-                java.awt.FontMetrics metrics =
-                        g2.getFontMetrics();
-
-
-                int textWidth =
-                        metrics.stringWidth(
-                                symbol
-                        );
-
-
-                int x =
-                        (getWidth() - textWidth)
-                                / 2;
-
-
-                int y =
-                        (getHeight()
-                                - metrics.getHeight())
-                                / 2
-                                + metrics.getAscent();
-
-
-                if (pieceColor == Color.WHITE) {
-
-
-                    /*
-                     * In light mode, draw a very small dark outline.
-                     *
-                     * This gives the solid white piece definition without
-                     * putting it inside a dark rectangular tile.
-                     */
-                    if (!darkTheme) {
-
-                        g2.setColor(
-                                new java.awt.Color(
-                                        70,
-                                        76,
-                                        84
-                                )
-                        );
-
-
-                        g2.drawString(
-                                symbol,
-                                x - 1,
-                                y
-                        );
-
-
-                        g2.drawString(
-                                symbol,
-                                x + 1,
-                                y
-                        );
-
-
-                        g2.drawString(
-                                symbol,
-                                x,
-                                y - 1
-                        );
-
-
-                        g2.drawString(
-                                symbol,
-                                x,
-                                y + 1
-                        );
-                    }
-
-
-                    g2.setColor(
-                            java.awt.Color.WHITE
-                    );
-
-
-                    g2.drawString(
-                            symbol,
-                            x,
-                            y
-                    );
-
-
-                } else {
-
-
-                    g2.setColor(
-                            java.awt.Color.BLACK
-                    );
-
-
-                    g2.drawString(
-                            symbol,
-                            x,
-                            y
-                    );
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                boolean pressed = getModel().isPressed() && getModel().isArmed();
+                boolean hovered = getModel().isRollover();
+                int top = pressed ? 1 : 0;
+                java.awt.Color edge = darkTheme ? new java.awt.Color(48, 62, 76) : new java.awt.Color(196, 205, 216);
+                java.awt.Color fill = darkTheme ? new java.awt.Color(26, 36, 46) : new java.awt.Color(249, 250, 252);
+                if (hovered) {
+                    fill = darkTheme ? new java.awt.Color(33, 49, 65) : new java.awt.Color(234, 242, 250);
+                    edge = darkTheme ? new java.awt.Color(63, 151, 255) : new java.awt.Color(64, 100, 145);
                 }
+                if (pressed) fill = fill.darker();
+                g.setColor(fill);
+                g.fillRect(0, 0, getWidth(), getHeight());
+                g.setColor(edge);
+                g.drawRect(0, 0, getWidth() - 1, getHeight() - 1);
 
-
+                g.setFont(getFont().deriveFont(Math.min(getFont().getSize2D(),
+                        Math.max(12f, Math.min(getWidth(), getHeight()) - 6f))));
+                java.awt.FontMetrics metrics = g.getFontMetrics();
+                int x = (getWidth() - metrics.stringWidth(symbol)) / 2;
+                int y = (getHeight() - 2 - metrics.getHeight()) / 2 + metrics.getAscent() + top;
+                // Outline both colors so black pieces remain legible on dark tiles.
+                g.setColor(pieceColor == Color.WHITE
+                        ? new java.awt.Color(75, 85, 97)
+                        : (darkTheme ? new java.awt.Color(163, 176, 190) : new java.awt.Color(113, 125, 140)));
+                g.drawString(symbol, x - 1, y);
+                g.drawString(symbol, x + 1, y);
+                g.drawString(symbol, x, y - 1);
+                g.drawString(symbol, x, y + 1);
+                g.setColor(pieceColor == Color.WHITE ? java.awt.Color.WHITE : java.awt.Color.BLACK);
+                g.drawString(symbol, x, y);
             } finally {
-
-                g2.dispose();
+                g.dispose();
             }
         }
     }

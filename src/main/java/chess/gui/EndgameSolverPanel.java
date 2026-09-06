@@ -15,7 +15,7 @@ public class EndgameSolverPanel extends JPanel {
     private final JLabel modeValue=new JLabel();
     private final JLabel sideValue=new JLabel();
     private final JLabel familyValue=new JLabel("Random exact family");
-    private final JLabel statusValue=new JLabel("Analysis is hidden while you solve.");
+    private final JTextArea statusValue=EndgameWorkspace.wrapping("Analysis is hidden while you solve.");
     private final JLabel proofValue=new JLabel("Exact solution");
     private final JLabel progressValue=new JLabel("Current: Unseen");
     private final JLabel totalsValue=new JLabel("Attempted: 0  •  Mastered: 0");
@@ -33,30 +33,39 @@ public class EndgameSolverPanel extends JPanel {
     private IntConsumer practiceStrengthListener;
     private Consumer<String> familyListener;
     private boolean updatingFamily;
-    private java.awt.Color primary,secondary,background,control,border;
 
     public EndgameSolverPanel(){
-        setLayout(new BorderLayout()); setPreferredSize(new Dimension(390,640));
-        JPanel content=new JPanel(); content.setOpaque(false); content.setLayout(new BoxLayout(content,BoxLayout.Y_AXIS));
-        content.setBorder(BorderFactory.createEmptyBorder(18,18,18,18));
-        content.add(label("ENDGAME SOLVER",true,13)); content.add(Box.createVerticalStrut(3));
-        content.add(label("Generate and prove exact endgame positions",false,12)); content.add(Box.createVerticalStrut(16));
-        content.add(section("FAMILY")); content.add(Box.createVerticalStrut(5));
-        familyBox.setMaximumSize(new Dimension(Integer.MAX_VALUE,32)); content.add(familyBox); content.add(Box.createVerticalStrut(5));
-        familyValue.setFont(new Font(Font.SANS_SERIF,Font.PLAIN,11)); familyValue.putClientProperty("secondary",true); content.add(familyValue);
-        content.add(Box.createVerticalStrut(13)); content.add(section("STUDY")); content.add(Box.createVerticalStrut(5));
-        modeValue.setFont(new Font(Font.SANS_SERIF,Font.BOLD,12)); content.add(modeValue); content.add(Box.createVerticalStrut(3));
-        sideValue.setFont(new Font(Font.SANS_SERIF,Font.PLAIN,12)); content.add(sideValue); content.add(Box.createVerticalStrut(3));
-        proofValue.setFont(new Font(Font.SANS_SERIF,Font.PLAIN,12)); content.add(proofValue);
-        content.add(Box.createVerticalStrut(13)); content.add(section("PROGRESS")); content.add(Box.createVerticalStrut(5));
-        progressValue.setFont(new Font(Font.SANS_SERIF,Font.BOLD,12)); content.add(progressValue); content.add(Box.createVerticalStrut(3));
-        totalsValue.setFont(new Font(Font.SANS_SERIF,Font.PLAIN,11)); totalsValue.putClientProperty("secondary",true); content.add(totalsValue);
-        content.add(Box.createVerticalStrut(14)); statusValue.setFont(new Font(Font.SANS_SERIF,Font.BOLD,12)); content.add(statusValue);
-        content.add(Box.createVerticalStrut(12)); content.add(hintButton); content.add(Box.createVerticalStrut(6)); content.add(giveUpButton);
-        content.add(Box.createVerticalStrut(12)); content.add(practiceMode); content.add(Box.createVerticalStrut(3));
-        practiceStrength.setMaximumSize(new Dimension(Integer.MAX_VALUE,36)); content.add(practiceStrength);
-        content.add(Box.createVerticalGlue()); content.add(nextButton); content.add(Box.createVerticalStrut(6)); content.add(newButton);
-        content.add(Box.createVerticalStrut(6)); content.add(resetProgressButton); add(content,BorderLayout.CENTER);
+        setLayout(new BorderLayout(0, 10));
+        setPreferredSize(new Dimension(800, 650));
+        setMinimumSize(new Dimension(0, 0));
+        add(EndgameWorkspace.heading("ENDGAME SOLVER", "Generate and prove exact endgame positions",
+                "EXACT SOLUTION TRAINING  /  SOLVER"), BorderLayout.NORTH);
+        modeValue.setFont(new Font("Segoe UI", Font.BOLD, 23));
+        sideValue.setFont(new Font("Segoe UI", Font.BOLD, 17));
+        familyValue.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        familyValue.putClientProperty("secondary", true);
+        EndgameWorkspace.telemetry(proofValue, true);
+        EndgameWorkspace.telemetry(totalsValue, false);
+        progressValue.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        familyBox.getAccessibleContext().setAccessibleName("Solver family");
+        practiceStrength.getAccessibleContext().setAccessibleName("Practice defense strength");
+        practiceStrength.setToolTipText("Practice defense strength: 0–100");
+        JPanel study = EndgameWorkspace.card(new BorderLayout(0, 12));
+        study.add(EndgameWorkspace.section("CURRENT STUDY"), BorderLayout.NORTH);
+        study.add(EndgameWorkspace.stack(10, familyBox, familyValue, modeValue, sideValue,
+                proofValue, statusValue), BorderLayout.CENTER);
+        JPanel defense = EndgameWorkspace.card(new BorderLayout(0, 12));
+        defense.add(EndgameWorkspace.section("DEFENSE & PROGRESS"), BorderLayout.NORTH);
+        defense.add(EndgameWorkspace.stack(10, progressValue, totalsValue, practiceMode,
+                practiceStrength, newButton), BorderLayout.CENTER);
+        JPanel note = EndgameWorkspace.card(new BorderLayout(0, 6));
+        note.add(EndgameWorkspace.section("EXACT SOLUTION"), BorderLayout.NORTH);
+        note.add(EndgameWorkspace.wrapping("Find the exact best move. Analysis remains hidden while you solve."), BorderLayout.CENTER);
+        add(EndgameWorkspace.scroll(new EndgameWorkspace.Body(new EndgameWorkspace.Pair(study, defense), note)), BorderLayout.CENTER);
+        JPanel footer = EndgameWorkspace.transparent(new BorderLayout(0, 6));
+        footer.add(EndgameWorkspace.actions(hintButton, giveUpButton, nextButton), BorderLayout.CENTER);
+        footer.add(resetProgressButton, BorderLayout.SOUTH);
+        add(footer, BorderLayout.SOUTH);
 
         hintButton.addActionListener(e->run(hintListener)); giveUpButton.addActionListener(e->run(giveUpListener));
         nextButton.addActionListener(e->run(nextListener)); newButton.addActionListener(e->run(newListener));
@@ -122,17 +131,9 @@ public class EndgameSolverPanel extends JPanel {
     public void setPracticeModeListener(Consumer<Boolean> l){practiceModeListener=l;}
     public void setPracticeStrengthListener(IntConsumer l){practiceStrengthListener=l;}
 
-    public void applyTheme(boolean dark){
-        background=dark?new java.awt.Color(19,27,35):new java.awt.Color(250,251,253); primary=dark?new java.awt.Color(242,244,247):new java.awt.Color(31,35,41);
-        secondary=dark?new java.awt.Color(164,173,184):new java.awt.Color(100,107,117); control=dark?new java.awt.Color(26,35,44):new java.awt.Color(244,246,249); border=dark?new java.awt.Color(42,53,64):new java.awt.Color(210,216,224);
-        setBackground(background); setBorder(BorderFactory.createLineBorder(border,1,true)); theme(this);
-        familyBox.setForeground(primary); familyBox.setBackground(control); practiceMode.setForeground(primary); practiceMode.setOpaque(false);
-        practiceStrength.setOpaque(false); for(JButton b:new JButton[]{hintButton,giveUpButton,nextButton,newButton,resetProgressButton}){b.setForeground(primary);b.setBackground(control);b.setBorder(BorderFactory.createLineBorder(border,1,true));b.setOpaque(true);b.setContentAreaFilled(true);}
-        repaint();
-    }
-    private JLabel section(String t){JLabel l=label(t,false,10);l.putClientProperty("secondary",true);return l;}
-    private JLabel label(String t,boolean bold,int size){JLabel l=new JLabel(t);l.setFont(new Font(Font.SANS_SERIF,bold?Font.BOLD:Font.PLAIN,size));l.putClientProperty(bold?"primary":"secondary",true);return l;}
-    private static JButton button(String t){JButton b=new JButton(t);b.setFont(new Font(Font.SANS_SERIF,Font.BOLD,12));b.setFocusPainted(false);b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));b.setMaximumSize(new Dimension(Integer.MAX_VALUE,38));return b;}
+    @Override public void doLayout() { EndgameWorkspace.adapt(this); super.doLayout(); }
+
+    public void applyTheme(boolean dark) { EndgameWorkspace.theme(this, dark); }
+    private static JButton button(String text) { return EndgameWorkspace.button(text); }
     private static void run(Runnable r){if(r!=null)r.run();}
-    private void theme(Container c){for(Component x:c.getComponents()){if(x instanceof JLabel l)l.setForeground(Boolean.TRUE.equals(l.getClientProperty("secondary"))?secondary:primary);if(x instanceof Container child)theme(child);}}
 }

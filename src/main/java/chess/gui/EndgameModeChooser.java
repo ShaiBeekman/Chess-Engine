@@ -25,18 +25,11 @@ public final class EndgameModeChooser extends JDialog {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setResizable(false);
 
-        Color background = dark
-                ? new Color(19, 27, 35)
-                : new Color(250, 251, 253);
-        Color foreground = dark
-                ? new Color(242, 244, 247)
-                : new Color(31, 35, 41);
-        Color secondary = dark
-                ? new Color(164, 173, 184)
-                : new Color(100, 107, 117);
-        Color card = dark
-                ? new Color(26, 35, 44)
-                : Color.WHITE;
+        EndgameWorkspace.Palette palette = EndgameWorkspace.Palette.of(dark);
+        Color background = palette.background();
+        Color foreground = palette.primary();
+        Color secondary = palette.secondary();
+        Color card = palette.card();
 
         JPanel root = new JPanel();
         root.setLayout(new BoxLayout(root, BoxLayout.Y_AXIS));
@@ -51,12 +44,12 @@ public final class EndgameModeChooser extends JDialog {
         header.setMaximumSize(new Dimension(Integer.MAX_VALUE, 58));
 
         JLabel title = new JLabel("ENDGAME");
-        title.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 18));
+        title.setFont(new Font("Segoe UI", Font.BOLD, 28));
         title.setForeground(foreground);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel subtitle = new JLabel("Choose how you want to work with solved endings.");
-        subtitle.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         subtitle.setForeground(secondary);
         subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
@@ -103,7 +96,7 @@ public final class EndgameModeChooser extends JDialog {
         root.add(Box.createVerticalStrut(22));
 
         setContentPane(root);
-        setSize(new Dimension(460, 315));
+        setSize(new Dimension(500, 345));
         setLocationRelativeTo(owner);
     }
 
@@ -122,15 +115,16 @@ public final class EndgameModeChooser extends JDialog {
     ) {
         JPanel panel = new JPanel(new BorderLayout(10, 4));
         panel.setBackground(background);
-        panel.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
+        panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(secondary.darker()),
+                BorderFactory.createEmptyBorder(14, 16, 14, 16)));
         panel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
         titleLabel.setForeground(foreground);
 
         JLabel descriptionLabel = new JLabel(description);
-        descriptionLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
+        descriptionLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         descriptionLabel.setForeground(secondary);
 
         panel.add(titleLabel, BorderLayout.NORTH);

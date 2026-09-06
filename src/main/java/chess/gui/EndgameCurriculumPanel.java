@@ -1,6 +1,7 @@
 package main.java.chess.gui;
 
 import main.java.chess.endgame.EndgameSettings;
+import main.java.chess.endgame.ExactEndgameTablebase;
 import main.java.chess.endgame.EndgameStudyProgress;
 import main.java.chess.model.Position;
 
@@ -27,7 +28,7 @@ public final class EndgameCurriculumPanel extends JPanel {
             new JLabel("—", SwingConstants.CENTER);
 
     private final JLabel proofValue =
-            new JLabel("Exact tablebase", SwingConstants.CENTER);
+            new EndgameWorkspace.TelemetryLabel("Exact tablebase");
 
     private final JLabel instructionValue =
             new JLabel(
@@ -35,14 +36,10 @@ public final class EndgameCurriculumPanel extends JPanel {
                     SwingConstants.CENTER
             );
 
-    private final JLabel statusValue =
-            new JLabel(
-                    "Progress is saved automatically.",
-                    SwingConstants.CENTER
-            );
+    private final JTextArea statusValue = EndgameWorkspace.wrapping("Progress is saved automatically.");
 
     private final JLabel masteryValue =
-            new JLabel("0 mastered", SwingConstants.CENTER);
+            new EndgameWorkspace.TelemetryLabel("0 mastered");
 
     private final JLabel masteryTitle =
             new JLabel(
@@ -51,25 +48,16 @@ public final class EndgameCurriculumPanel extends JPanel {
             );
 
     private final JLabel orderPositionValue =
-            new JLabel("ORDERED", SwingConstants.CENTER);
+            new EndgameWorkspace.TelemetryLabel("ORDERED");
 
     private final JLabel inProgressValue =
-            new JLabel(
-                    "In progress: 0",
-                    SwingConstants.CENTER
-            );
+            new EndgameWorkspace.TelemetryLabel("0");
 
     private final JLabel completeValue =
-            new JLabel(
-                    "Complete: 0",
-                    SwingConstants.CENTER
-            );
+            new EndgameWorkspace.TelemetryLabel("0");
 
     private final JLabel reviewValue =
-            new JLabel(
-                    "Review stack: 0",
-                    SwingConstants.CENTER
-            );
+            new EndgameWorkspace.TelemetryLabel("0");
 
     private final JProgressBar masteryBar =
             new JProgressBar(0, 100);
@@ -97,6 +85,8 @@ public final class EndgameCurriculumPanel extends JPanel {
                     "Starting position",
                     SwingConstants.CENTER
             );
+
+    private final EndgamePlayedLine playedLine = new EndgamePlayedLine();
 
     private final JButton resetProgressButton =
             button("Reset All Endgame Progress");
@@ -126,589 +116,85 @@ public final class EndgameCurriculumPanel extends JPanel {
     private boolean updatingFamily;
     private boolean updatingOrder;
 
-    private java.awt.Color primary;
-    private java.awt.Color secondary;
-    private java.awt.Color background;
-    private java.awt.Color card;
-    private java.awt.Color control;
-    private java.awt.Color border;
-    private java.awt.Color accent;
-
-
     public EndgameCurriculumPanel() {
+        setLayout(new BorderLayout(0, 10));
+        setPreferredSize(new Dimension(800, 650));
+        setMinimumSize(new Dimension(0, 0));
+        add(EndgameWorkspace.heading("ENDGAME", "Master exact 3- and 4-piece endings",
+                "EXACT SOLUTION TRAINING  /  CURRICULUM"), BorderLayout.NORTH);
 
-        setLayout(
-                new BorderLayout()
-        );
-
-        setPreferredSize(
-                new Dimension(
-                        410,
-                        650
-                )
-        );
-
-        JPanel root =
-                new JPanel();
-
-        root.setOpaque(false);
-        root.setLayout(
-                new BoxLayout(
-                        root,
-                        BoxLayout.Y_AXIS
-                )
-        );
-
-        root.setBorder(
-                BorderFactory.createEmptyBorder(
-                        18,
-                        18,
-                        6,
-                        18
-                )
-        );
-
-
-        JLabel title =
-                text(
-                        "ENDGAME",
-                        true,
-                        13
-                );
-
-        JLabel subtitle =
-                text(
-                        "Master exact 3- and 4-piece endings",
-                        false,
-                        12
-                );
-
-        makeFullWidthCentered(title);
-        makeFullWidthCentered(subtitle);
-
-        root.add(title);
-        root.add(
-                Box.createVerticalStrut(3)
-        );
-        root.add(subtitle);
-        root.add(
-                Box.createVerticalStrut(16)
-        );
-
-
-        // =====================================================
-        // Family card
-        // =====================================================
-
-        JPanel hero =
-                cardPanel();
-
-        hero.setLayout(
-                new BoxLayout(
-                        hero,
-                        BoxLayout.Y_AXIS
-                )
-        );
-
-        familyHero.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        27
-                )
-        );
-
-        familyDescription.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.PLAIN,
-                        11
-                )
-        );
-
-        makeFullWidthCentered(familyHero);
-        makeFullWidthCentered(familyDescription);
-
-        familyBox.setPreferredSize(
-                new Dimension(
-                        220,
-                        32
-                )
-        );
-
-        familyBox.setMinimumSize(
-                new Dimension(
-                        180,
-                        32
-                )
-        );
-
-        familyBox.setMaximumSize(
-                new Dimension(
-                        260,
-                        32
-                )
-        );
-
-        hero.add(
-                Box.createVerticalStrut(14)
-        );
-        hero.add(familyHero);
-        hero.add(
-                Box.createVerticalStrut(3)
-        );
-        hero.add(familyDescription);
-        hero.add(
-                Box.createVerticalStrut(12)
-        );
-        addCenteredComponent(
-                hero,
-                familyBox
-        );
-        hero.add(
-                Box.createVerticalStrut(14)
-        );
-
-        root.add(hero);
-        root.add(
-                Box.createVerticalStrut(12)
-        );
-
-
-        // =====================================================
-        // Progress card
-        // =====================================================
-
-        JPanel progress =
-                cardPanel();
-
-        progress.setLayout(
-                new BoxLayout(
-                        progress,
-                        BoxLayout.Y_AXIS
-                )
-        );
-
-        masteryTitle.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        10
-                )
-        );
-
-        masteryValue.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        12
-                )
-        );
-
-        for (JLabel label : new JLabel[]{
-                inProgressValue,
-                completeValue,
-                reviewValue,
-                orderPositionValue
-        }) {
-            label.setFont(
-                    new Font(
-                            Font.SANS_SERIF,
-                            Font.PLAIN,
-                            11
-                    )
-            );
+        familyHero.setFont(new Font("Segoe UI", Font.BOLD, 25));
+        familyDescription.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        familyDescription.putClientProperty("secondary", true);
+        sideValue.setFont(new Font("Segoe UI", Font.BOLD, 17));
+        instructionValue.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        masteryValue.setFont(new Font(Font.MONOSPACED, Font.BOLD, 14));
+        for (JLabel label : new JLabel[]{proofValue, orderPositionValue, inProgressValue,
+                completeValue, reviewValue, moveReviewValue}) EndgameWorkspace.telemetry(label, label == proofValue);
+        masteryTitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        masteryTitle.putClientProperty("secondary", true);
+        for (JLabel label : new JLabel[]{familyHero, familyDescription, sideValue, proofValue,
+                instructionValue, masteryTitle, masteryValue, orderPositionValue,
+                inProgressValue, completeValue, reviewValue, moveReviewValue}) {
+            label.setHorizontalAlignment(SwingConstants.LEFT);
+            label.setMinimumSize(new Dimension(0, label.getPreferredSize().height));
         }
+        familyBox.getAccessibleContext().setAccessibleName("Endgame family");
+        orderBox.getAccessibleContext().setAccessibleName("Curriculum order");
+        statusValue.getAccessibleContext().setAccessibleName("Current study feedback");
 
-        for (JLabel label : new JLabel[]{
-                masteryTitle,
-                masteryValue,
-                completeValue,
-                inProgressValue,
-                reviewValue,
-                orderPositionValue
-        }) {
-            makeFullWidthCentered(label);
-        }
+        JPanel family = EndgameWorkspace.transparent(new BorderLayout(12, 0));
+        family.add(familyHero, BorderLayout.CENTER);
+        family.add(familyBox, BorderLayout.EAST);
+        JPanel study = EndgameWorkspace.card(new BorderLayout(0, 8));
+        study.setName("currentStudyCard");
+        study.add(EndgameWorkspace.section("CURRENT STUDY"), BorderLayout.NORTH);
+        JLabel defense = EndgameWorkspace.section("TABLEBASE DEFENSE  \u2022  EXACT");
+        defense.putClientProperty("accent", true);
+        statusValue.setRows(1);
+        JPanel exactState = EndgameWorkspace.transparent(new BorderLayout(8, 0));
+        exactState.add(sideValue, BorderLayout.WEST);
+        exactState.add(proofValue, BorderLayout.CENTER);
+        study.add(EndgameWorkspace.top(EndgameWorkspace.stack(4, family, familyDescription,
+                exactState, defense, instructionValue, statusValue)), BorderLayout.CENTER);
 
+        JPanel order = EndgameWorkspace.transparent(new BorderLayout(8, 0));
+        orderBox.setToolTipText("Study order");
+        order.add(orderBox, BorderLayout.CENTER);
+        order.add(resetFamilyButton, BorderLayout.EAST);
         masteryBar.setStringPainted(false);
-        masteryBar.setAlignmentX(
-                Component.CENTER_ALIGNMENT
-        );
-        masteryBar.setPreferredSize(
-                new Dimension(
-                        330,
-                        8
-                )
-        );
-        masteryBar.setMaximumSize(
-                new Dimension(
-                        330,
-                        8
-                )
-        );
+        masteryBar.getAccessibleContext().setAccessibleName("Curriculum mastery percentage");
+        JPanel progress = EndgameWorkspace.card(new BorderLayout(0, 8));
+        progress.setName("masteryCard");
+        progress.add(masteryTitle, BorderLayout.NORTH);
+        progress.add(EndgameWorkspace.top(EndgameWorkspace.stack(5, masteryValue, masteryBar,
+                new EndgameWorkspace.TelemetryCells(completeValue, inProgressValue, reviewValue), order,
+                orderPositionValue)), BorderLayout.CENTER);
 
-        progress.add(
-                Box.createVerticalStrut(10)
-        );
-        progress.add(masteryTitle);
-        progress.add(
-                Box.createVerticalStrut(8)
-        );
-        progress.add(masteryBar);
-        progress.add(
-                Box.createVerticalStrut(7)
-        );
-        progress.add(masteryValue);
-        progress.add(
-                Box.createVerticalStrut(3)
-        );
-        progress.add(completeValue);
-        progress.add(inProgressValue);
-        progress.add(reviewValue);
-        progress.add(
-                Box.createVerticalStrut(7)
-        );
-
-        orderBox.setPreferredSize(
-                new Dimension(
-                        180,
-                        30
-                )
-        );
-        orderBox.setMinimumSize(
-                new Dimension(
-                        180,
-                        30
-                )
-        );
-        orderBox.setMaximumSize(
-                new Dimension(
-                        180,
-                        30
-                )
-        );
-
-        addCenteredComponent(
-                progress,
-                orderBox
-        );
-
-        progress.add(
-                Box.createVerticalStrut(4)
-        );
-        progress.add(orderPositionValue);
-        progress.add(
-                Box.createVerticalStrut(7)
-        );
-
-        addCenteredButton(
-                progress,
-                resetFamilyButton,
-                210
-        );
-
-        progress.add(
-                Box.createVerticalStrut(10)
-        );
-
-        root.add(progress);
-        root.add(
-                Box.createVerticalStrut(12)
-        );
-
-
-        // =====================================================
-        // Current-position card
-        // =====================================================
-
-        JPanel lesson =
-                cardPanel();
-
-        lesson.setLayout(
-                new BoxLayout(
-                        lesson,
-                        BoxLayout.Y_AXIS
-                )
-        );
-
-        JLabel current =
-                text(
-                        "CURRENT POSITION",
-                        true,
-                        10
-                );
-
-        current.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        10
-                )
-        );
-
-        sideValue.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        14
-                )
-        );
-
-        proofValue.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.PLAIN,
-                        11
-                )
-        );
-
-        instructionValue.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        16
-                )
-        );
-
-        statusValue.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.PLAIN,
-                        11
-                )
-        );
-
-        for (JLabel label : new JLabel[]{
-                current,
-                sideValue,
-                proofValue,
-                instructionValue,
-                statusValue
-        }) {
-            makeFullWidthCentered(label);
-        }
-
-        lesson.add(
-                Box.createVerticalStrut(10)
-        );
-        lesson.add(current);
-        lesson.add(
-                Box.createVerticalStrut(8)
-        );
-        lesson.add(sideValue);
-        lesson.add(proofValue);
-        lesson.add(
-                Box.createVerticalStrut(12)
-        );
-        lesson.add(instructionValue);
-        lesson.add(
-                Box.createVerticalStrut(4)
-        );
-        lesson.add(statusValue);
-
-        moveReviewValue.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.PLAIN,
-                        11
-                )
-        );
-        moveReviewValue.putClientProperty(
-                "secondary",
-                true
-        );
-        makeFullWidthCentered(moveReviewValue);
-
-        JPanel moveReviewActions =
-                new JPanel(
-                        new GridLayout(
-                                1,
-                                2,
-                                8,
-                                0
-                        )
-                );
-
-        moveReviewActions.setOpaque(false);
-        moveReviewActions.setAlignmentX(
-                Component.CENTER_ALIGNMENT
-        );
-        moveReviewActions.setPreferredSize(
-                new Dimension(
-                        310,
-                        34
-                )
-        );
-        moveReviewActions.setMaximumSize(
-                new Dimension(
-                        310,
-                        34
-                )
-        );
-
-        previousMoveButton.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        11
-                )
-        );
-        nextMoveButton.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        11
-                )
-        );
-
-        previousMoveButton.setToolTipText(
-                "Previous move (Left Arrow)"
-        );
-        nextMoveButton.setToolTipText(
-                "Next move (Right Arrow)"
-        );
-
+        previousMoveButton.setToolTipText("Previous move (Left Arrow)");
+        nextMoveButton.setToolTipText("Next move (Right Arrow)");
         previousMoveButton.setEnabled(false);
         nextMoveButton.setEnabled(false);
+        JPanel navigation = EndgameWorkspace.transparent(new GridLayout(1, 2, 8, 0));
+        navigation.add(previousMoveButton);
+        navigation.add(nextMoveButton);
+        JPanel path = EndgameWorkspace.card(new BorderLayout(0, 8));
+        path.setName("playedLineCard");
+        path.add(new EndgameWorkspace.Pair(EndgameWorkspace.stack(6,
+                EndgameWorkspace.section("PLAYED LINE / MOVE REVIEW"), moveReviewValue), navigation), BorderLayout.NORTH);
+        path.add(playedLine, BorderLayout.CENTER);
 
-        moveReviewActions.add(previousMoveButton);
-        moveReviewActions.add(nextMoveButton);
-
-        lesson.add(
-                Box.createVerticalStrut(9)
-        );
-        lesson.add(moveReviewValue);
-        lesson.add(
-                Box.createVerticalStrut(6)
-        );
-        addCenteredComponent(
-                lesson,
-                moveReviewActions
-        );
-        lesson.add(
-                Box.createVerticalStrut(10)
-        );
-
-        root.add(lesson);
-        root.add(
-                Box.createVerticalStrut(8)
-        );
-
-
-        // =====================================================
-        // Secondary action
-        // =====================================================
-
-        addCenteredButton(
-                root,
-                resetProgressButton,
-                250
-        );
-
-        root.add(
-                Box.createVerticalStrut(8)
-        );
-
-
-        // =====================================================
-        // Scrollable curriculum body
-        // =====================================================
-
-        JScrollPane scrollPane =
-                new JScrollPane(
-                        root,
-                        ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                        ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-                );
-
-        scrollPane.setBorder(null);
-        scrollPane.setOpaque(false);
-        scrollPane.getViewport().setOpaque(false);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
-        scrollPane.getVerticalScrollBar().setBlockIncrement(90);
-
-        add(
-                scrollPane,
-                BorderLayout.CENTER
-        );
-
-
-        // =====================================================
-        // Fixed Trainer actions
-        //
-        // Keep Hint / Give Up / Next Position outside the scroll pane so
-        // Next Position can never be clipped below the visible panel.
-        // =====================================================
-
-        JPanel actionFooter =
-                new JPanel();
-
-        actionFooter.setOpaque(false);
-        actionFooter.setLayout(
-                new BoxLayout(
-                        actionFooter,
-                        BoxLayout.Y_AXIS
-                )
-        );
-
-        actionFooter.setBorder(
-                BorderFactory.createEmptyBorder(
-                        6,
-                        18,
-                        10,
-                        18
-                )
-        );
-
-        JPanel actions =
-                new JPanel(
-                        new GridLayout(
-                                1,
-                                2,
-                                8,
-                                0
-                        )
-                );
-
-        actions.setOpaque(false);
-        actions.setAlignmentX(
-                Component.CENTER_ALIGNMENT
-        );
-
-        Dimension actionSize =
-                new Dimension(
-                        330,
-                        38
-                );
-
-        actions.setPreferredSize(actionSize);
-        actions.setMinimumSize(actionSize);
-        actions.setMaximumSize(actionSize);
-
-        actions.add(hintButton);
-        actions.add(giveUpButton);
-
-        actionFooter.add(actions);
-        actionFooter.add(
-                Box.createVerticalStrut(5)
-        );
-
-        addCenteredButton(
-                actionFooter,
-                nextButton,
-                220
-        );
-
-        add(
-                actionFooter,
-                BorderLayout.SOUTH
-        );
-
-
-        // =====================================================
-        // Listeners
-        // =====================================================
+        JPanel body = new EndgameWorkspace.Body(new EndgameWorkspace.Pair(study, progress), path, true);
+        add(EndgameWorkspace.scroll(body), BorderLayout.CENTER);
+        JPanel footer = EndgameWorkspace.actions(hintButton, giveUpButton, nextButton);
+        JPanel actionHeading = EndgameWorkspace.transparent(new BorderLayout(8, 0));
+        actionHeading.add(EndgameWorkspace.section("TRAINING ACTIONS / AUTO-SAVED"), BorderLayout.CENTER);
+        resetProgressButton.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        resetProgressButton.setPreferredSize(new Dimension(194, 24));
+        actionHeading.add(resetProgressButton, BorderLayout.EAST);
+        footer.remove(((BorderLayout) footer.getLayout()).getLayoutComponent(BorderLayout.NORTH));
+        footer.add(actionHeading, BorderLayout.NORTH);
+        add(footer, BorderLayout.SOUTH);
 
         hintButton.addActionListener(
                 event -> run(hintListener)
@@ -946,6 +432,8 @@ public final class EndgameCurriculumPanel extends JPanel {
                         )
                 );
 
+        playedLine.select(safeIndex, safeLast);
+
         previousMoveButton.setEnabled(
                 safeLast > 0
                         && safeIndex > 0
@@ -990,6 +478,11 @@ public final class EndgameCurriculumPanel extends JPanel {
         );
     }
 
+
+    /** Presentation snapshot of committed curriculum history; never asks for a continuation. */
+    public void setPlayedLine(List<Position> history, ExactEndgameTablebase tablebase) {
+        playedLine.setHistory(history, tablebase);
+    }
 
     public void setFamilyDisplay(String name) {
         updateHero(name);
@@ -1112,38 +605,9 @@ public final class EndgameCurriculumPanel extends JPanel {
                 )
         );
 
-        completeValue.setText(
-                denominator > 0
-                        ? String.format(
-                        "Complete: %,d / %,d",
-                        completed,
-                        denominator
-                )
-                        : String.format(
-                        "Complete: %,d",
-                        completed
-                )
-        );
-
-        inProgressValue.setText(
-                denominator > 0
-                        ? String.format(
-                        "In progress: %,d / %,d",
-                        inProgress,
-                        denominator
-                )
-                        : String.format(
-                        "In progress: %,d",
-                        inProgress
-                )
-        );
-
-        reviewValue.setText(
-                String.format(
-                        "Review stack: %,d",
-                        reviewCount
-                )
-        );
+        completeValue.setText(String.format("%,d", completed));
+        inProgressValue.setText(String.format("%,d", inProgress));
+        reviewValue.setText(String.format("%,d", reviewCount));
 
         orderPositionValue.setText(
                 (order == EndgameStudyProgress.StudyOrder.ORDERED
@@ -1184,82 +648,12 @@ public final class EndgameCurriculumPanel extends JPanel {
     // Theme
     // =========================================================
 
+    @Override public void doLayout() { EndgameWorkspace.adapt(this); super.doLayout(); }
+
     public void applyTheme(boolean dark) {
-        background =
-                dark
-                        ? new java.awt.Color(19, 27, 35)
-                        : new java.awt.Color(250, 251, 253);
-
-        card =
-                dark
-                        ? new java.awt.Color(24, 33, 42)
-                        : java.awt.Color.WHITE;
-
-        control =
-                dark
-                        ? new java.awt.Color(30, 40, 50)
-                        : new java.awt.Color(244, 246, 249);
-
-        border =
-                dark
-                        ? new java.awt.Color(46, 58, 70)
-                        : new java.awt.Color(216, 222, 230);
-
-        primary =
-                dark
-                        ? new java.awt.Color(242, 244, 247)
-                        : new java.awt.Color(31, 35, 41);
-
-        secondary =
-                dark
-                        ? new java.awt.Color(164, 173, 184)
-                        : new java.awt.Color(100, 107, 117);
-
-        accent =
-                dark
-                        ? new java.awt.Color(110, 156, 214)
-                        : new java.awt.Color(55, 105, 170);
-
-        setBackground(background);
-
-        theme(this);
-
-        masteryBar.setForeground(accent);
-        masteryBar.setBackground(control);
-
-        familyBox.setBackground(control);
-        familyBox.setForeground(primary);
-
-        orderBox.setBackground(control);
-        orderBox.setForeground(primary);
-
-        for (JButton button : new JButton[]{
-                hintButton,
-                giveUpButton,
-                nextButton,
-                previousMoveButton,
-                nextMoveButton,
-                resetProgressButton,
-                resetFamilyButton
-        }) {
-            button.setBackground(control);
-            button.setForeground(primary);
-            button.setBorder(
-                    BorderFactory.createLineBorder(
-                            border,
-                            1,
-                            true
-                    )
-            );
-        }
-
-        repaint();
+        EndgameWorkspace.theme(this, dark);
+        playedLine.applyTheme(dark);
     }
-
-
-    // =========================================================
-    // Helpers
-    // =========================================================
 
     private void updateHero(String name) {
         String value =
@@ -1273,7 +667,7 @@ public final class EndgameCurriculumPanel extends JPanel {
         );
 
         familyDescription.setText(
-                "Random".equals(value)
+                ("Random".equals(value) || "Mixed".equals(value))
                         ? "Explore across every solved family"
                         : description(value)
         );
@@ -1299,225 +693,9 @@ public final class EndgameCurriculumPanel extends JPanel {
     }
 
 
-    private JPanel cardPanel() {
-        JPanel panel =
-                new JPanel();
-
-        panel.putClientProperty(
-                "curriculumCard",
-                true
-        );
-
-        panel.setAlignmentX(
-                Component.CENTER_ALIGNMENT
-        );
-
-        panel.setMaximumSize(
-                new Dimension(
-                        Integer.MAX_VALUE,
-                        Integer.MAX_VALUE
-                )
-        );
-
-        return panel;
-    }
-
-
-    private JLabel text(
-            String text,
-            boolean bold,
-            int size
-    ) {
-        JLabel label =
-                new JLabel(
-                        text,
-                        SwingConstants.CENTER
-                );
-
-        label.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        bold
-                                ? Font.BOLD
-                                : Font.PLAIN,
-                        size
-                )
-        );
-
-        label.putClientProperty(
-                bold
-                        ? "primary"
-                        : "secondary",
-                true
-        );
-
-        return label;
-    }
-
-
     private static JButton button(String text) {
-        JButton button =
-                new JButton(text);
-
-        button.setFont(
-                new Font(
-                        Font.SANS_SERIF,
-                        Font.BOLD,
-                        12
-                )
-        );
-
-        button.setFocusPainted(false);
-
-        button.setCursor(
-                Cursor.getPredefinedCursor(
-                        Cursor.HAND_CURSOR
-                )
-        );
-
-        button.setMaximumSize(
-                new Dimension(
-                        Integer.MAX_VALUE,
-                        38
-                )
-        );
-
-        return button;
+        return EndgameWorkspace.button(text);
     }
-
-
-    private void theme(Container container) {
-        for (Component component : container.getComponents()) {
-
-            if (component instanceof JPanel panel
-                    && Boolean.TRUE.equals(
-                    panel.getClientProperty(
-                            "curriculumCard"
-                    )
-            )) {
-                panel.setBackground(card);
-                panel.setBorder(
-                        BorderFactory.createLineBorder(
-                                border,
-                                1,
-                                true
-                        )
-                );
-            }
-
-            if (component instanceof JLabel label) {
-                label.setForeground(
-                        Boolean.TRUE.equals(
-                                label.getClientProperty(
-                                        "secondary"
-                                )
-                        )
-                                ? secondary
-                                : primary
-                );
-            }
-
-            if (component instanceof Container child) {
-                theme(child);
-            }
-        }
-    }
-
-
-    private static void addCenteredButton(
-            JPanel parent,
-            JButton button,
-            int width
-    ) {
-        Dimension size =
-                new Dimension(
-                        width,
-                        38
-                );
-
-        button.setPreferredSize(size);
-        button.setMinimumSize(size);
-        button.setMaximumSize(size);
-
-        addCenteredComponent(
-                parent,
-                button
-        );
-    }
-
-
-    private static void addCenteredComponent(
-            JPanel parent,
-            JComponent component
-    ) {
-        Box row =
-                Box.createHorizontalBox();
-
-        row.setAlignmentX(
-                Component.CENTER_ALIGNMENT
-        );
-
-        int height =
-                Math.max(
-                        component.getPreferredSize().height,
-                        30
-                );
-
-        row.setMinimumSize(
-                new Dimension(
-                        0,
-                        height
-                )
-        );
-
-        row.setPreferredSize(
-                new Dimension(
-                        component.getPreferredSize().width,
-                        height
-                )
-        );
-
-        row.setMaximumSize(
-                new Dimension(
-                        Integer.MAX_VALUE,
-                        height
-                )
-        );
-
-        row.add(
-                Box.createHorizontalGlue()
-        );
-        row.add(component);
-        row.add(
-                Box.createHorizontalGlue()
-        );
-
-        parent.add(row);
-    }
-
-
-    private static void makeFullWidthCentered(
-            JLabel label
-    ) {
-        label.setHorizontalAlignment(
-                SwingConstants.CENTER
-        );
-
-        label.setAlignmentX(
-                Component.CENTER_ALIGNMENT
-        );
-
-        Dimension preferred =
-                label.getPreferredSize();
-
-        label.setMaximumSize(
-                new Dimension(
-                        Integer.MAX_VALUE,
-                        preferred.height + 2
-                )
-        );
-    }
-
 
     private static void run(Runnable runnable) {
         if (runnable != null) {

@@ -51,7 +51,7 @@ public class ChessBoardPanel extends JPanel {
 
     /*
      * Painted by the board itself so the loading dim covers exactly the same
-     * 640 x 640 pixels as the chess squares, with no Swing-layout edge sliver.
+     * scaled square as the chess pieces, with no Swing-layout edge sliver.
      */
     private static final java.awt.Color LOADING_OVERLAY =
             new java.awt.Color(8, 13, 18, 150);
@@ -1602,11 +1602,10 @@ public class ChessBoardPanel extends JPanel {
                 displayRank(pendingPromotionSquare.rank());
 
 
-        int clickedFile =
-                mouseX / SQUARE_SIZE;
-
-        int clickedDisplayRank =
-                mouseY / SQUARE_SIZE;
+        double squareSize = SQUARE_SIZE * getRenderScale();
+        if (mouseX < 0 || mouseY < 0 || squareSize <= 0) return -1;
+        int clickedFile = (int) (mouseX / squareSize);
+        int clickedDisplayRank = (int) (mouseY / squareSize);
 
 
         if (clickedFile != file) {
@@ -1861,11 +1860,14 @@ public class ChessBoardPanel extends JPanel {
             int mouseY
     ) {
 
+        double squareSize = SQUARE_SIZE * getRenderScale();
+        if (mouseX < 0 || mouseY < 0 || squareSize <= 0) return null;
+
         int displayFile =
-                mouseX / SQUARE_SIZE;
+                (int) (mouseX / squareSize);
 
         int displayRank =
-                mouseY / SQUARE_SIZE;
+                (int) (mouseY / squareSize);
 
         if (displayFile < 0
                 || displayFile >= BOARD_SIZE
@@ -1916,6 +1918,15 @@ public class ChessBoardPanel extends JPanel {
     // Painting
     // =========================================================
 
+    /** The host, painting and hit testing share the same square in every mode. */
+    static int squareWithin(int availableWidth, int availableHeight) {
+        return Math.max(0, Math.min(availableWidth, availableHeight));
+    }
+
+    private double getRenderScale() {
+        return squareWithin(getWidth(), getHeight()) / (double) (BOARD_SIZE * SQUARE_SIZE);
+    }
+
     @Override
     protected void paintComponent(
             Graphics graphics
@@ -1927,6 +1938,13 @@ public class ChessBoardPanel extends JPanel {
 
         Graphics2D g2 =
                 (Graphics2D) graphics.create();
+
+        double scale = getRenderScale();
+        if (scale <= 0) {
+            g2.dispose();
+            return;
+        }
+        g2.scale(scale, scale);
 
         g2.setRenderingHint(
                 RenderingHints.KEY_ANTIALIASING,
@@ -1978,8 +1996,8 @@ public class ChessBoardPanel extends JPanel {
             drawDraggedPiece(
                     g2,
                     draggedPiece,
-                    dragX,
-                    dragY
+                    (int) Math.round(dragX / scale),
+                    (int) Math.round(dragY / scale)
             );
         }
 

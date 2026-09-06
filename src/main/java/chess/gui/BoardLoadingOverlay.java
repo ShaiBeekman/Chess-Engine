@@ -29,18 +29,27 @@ public final class BoardLoadingOverlay extends JPanel {
     private static final Color SECONDARY_TEXT =
             new Color(174, 184, 195);
 
+    private final JPanel card;
     private final JLabel titleLabel;
     private final JLabel detailLabel;
     private final JProgressBar progressBar;
+
+    @Override public void doLayout() {
+        // The scrim is painted by ChessBoardPanel. Only center the status card
+        // here; even a compact square must contain it completely.
+        Dimension preferred = card.getPreferredSize();
+        int width = Math.min(getWidth(), preferred.width);
+        int height = Math.min(getHeight(), preferred.height);
+        card.setBounds((getWidth() - width) / 2, (getHeight() - height) / 2, width, height);
+    }
 
     public BoardLoadingOverlay() {
 
         setOpaque(false);
         setVisible(false);
-        setLayout(new GridBagLayout());
+        setLayout(null);
 
-        JPanel card =
-                new JPanel();
+        card = new JPanel();
 
         card.setLayout(
                 new BoxLayout(

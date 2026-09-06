@@ -751,6 +751,13 @@ public class ChessWindow extends JFrame {
                 this::cancelPositionSetup
         );
 
+        setupPanel.setClearListener(() -> {
+            piecePalettePanel.cancelActiveDrag();
+            boardPanel.clearSetupBoard();
+        });
+        setupPanel.setCancelListener(this::cancelPositionSetup);
+        setupPanel.setSideToMoveListener(boardPanel::setSetupSideToMove);
+
 
         piecePalettePanel.setAnalyzeListener(
                 this::commitPositionSetup
@@ -818,7 +825,7 @@ public class ChessWindow extends JFrame {
 
 
         boardArea =
-                new JPanel(
+                new BoardColumn(
                         new BorderLayout(
                                 8,
                                 0
@@ -852,38 +859,27 @@ public class ChessWindow extends JFrame {
          * Exact tablebases are loaded by SwingWorker, so the EDT remains free
          * to animate this overlay while the worker reads/decompresses the asset.
          */
-        boardStack =
-                new JPanel();
-
+        boardStack = new JPanel(null) {
+            @Override public void doLayout() {
+                Insets insets = getInsets();
+                int side = ChessBoardPanel.squareWithin(
+                        getWidth() - insets.left - insets.right,
+                        getHeight() - insets.top - insets.bottom);
+                boardPanel.setBounds(insets.left, insets.top, side, side);
+                boardLoadingOverlay.setBounds(boardPanel.getBounds());
+            }
+        };
         boardStack.setOpaque(false);
-        boardStack.setLayout(new OverlayLayout(boardStack));
 
         Dimension boardSize =
                 boardPanel.getPreferredSize();
 
         boardStack.setPreferredSize(boardSize);
-        boardStack.setMinimumSize(boardSize);
+        boardStack.setMinimumSize(new Dimension(0, 0));
 
-        /*
-         * ChessBoardPanel paints its fixed 640 x 640 board from the component's
-         * top-left corner.  BorderLayout may make boardStack taller than that
-         * when the window is maximized, so both overlay children must use the
-         * same fixed bounds and top-left alignment.  Center-aligning the
-         * fixed-size overlay inside the taller stack leaves an uncovered strip
-         * across the top of the painted board.
-         */
-        boardPanel.setAlignmentX(0.0f);
-        boardPanel.setAlignmentY(0.0f);
-        boardPanel.setMaximumSize(boardSize);
-
+        // The loading layer always shares the rendered board's exact bounds.
         boardLoadingOverlay =
                 new BoardLoadingOverlay();
-
-        boardLoadingOverlay.setAlignmentX(0.0f);
-        boardLoadingOverlay.setAlignmentY(0.0f);
-        boardLoadingOverlay.setPreferredSize(boardSize);
-        boardLoadingOverlay.setMinimumSize(boardSize);
-        boardLoadingOverlay.setMaximumSize(boardSize);
 
         // Component index 0 is the top-most child for Swing z-order.
         boardStack.add(boardLoadingOverlay);
@@ -898,11 +894,8 @@ public class ChessWindow extends JFrame {
 
 
         /*
-         * Keep the fixed 640px board column at its natural width.  When the
-         * board area lived in BorderLayout.CENTER it absorbed every extra
-         * fullscreen pixel even though ChessBoardPanel still paints only its
-         * fixed 8 x 80 board.  The result was the large empty strip between
-         * the board and whichever right-side mode was active.
+         * The column requests only the width of its fitted square plus local
+         * insets/evaluation bar. Extra workspace width belongs to the dashboard.
          */
         workspace.add(
                 boardArea,
@@ -991,37 +984,14 @@ public class ChessWindow extends JFrame {
         );
 
 
-        /*
-         * Preserve the original M68C6E PiecePalettePanel exactly, but keep its
-         * wide preferred width from inflating the BorderLayout.WEST board
-         * column. The transparent host spans the workspace; the unchanged
-         * palette itself remains left-aligned at the bottom.
-         */
-        setupPaletteHost =
-                new JPanel(
-                        new FlowLayout(
-                                FlowLayout.LEFT,
-                                0,
-                                0
-                        )
-                );
-
-        setupPaletteHost.setOpaque(
-                false
-        );
-
-        setupPaletteHost.add(
-                piecePalettePanel
-        );
-
-        setupPaletteHost.setVisible(
-                false
-        );
-
-        workspace.add(
-                setupPaletteHost,
-                BorderLayout.SOUTH
-        );
+        // The palette belongs to the board column, so the dashboard can use
+        // the full workspace height alongside both board and palette.
+        setupPaletteHost = new JPanel(new BorderLayout());
+        setupPaletteHost.setOpaque(false);
+        setupPaletteHost.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+        setupPaletteHost.add(piecePalettePanel, BorderLayout.CENTER);
+        setupPaletteHost.setVisible(false);
+        boardArea.add(setupPaletteHost, BorderLayout.SOUTH);
 
 
         add(
@@ -1220,33 +1190,16 @@ public class ChessWindow extends JFrame {
         pack();
 
 
-        setMinimumSize(
-                new Dimension(
-                        1240,
-                        760
-                )
-        );
-
-
-        /*
-         * M88.3 startup-fit polish:
-         *
-         * Use the same taskbar-aware sizing path that Setup and Endgame already
-         * use instead of forcing the packed startup window to at least 1280x800.
-         * On scaled / shorter Windows desktops the old startup path could extend
-         * below the usable work area even though resizeForCurrentMode() already
-         * knows how to clamp the window to the actual screen bounds.
-         *
-         * Center first, then let the existing helper shrink/reposition only when
-         * necessary. On a large enough display the normal preferred size is kept.
-         */
-        setLocationRelativeTo(
-                null
-        );
-
-
-        resizeForCurrentMode();
-
+        setLocationRelativeTo(null);
+        fitWindowToUsableBounds(true);
+        addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent event) {
+                fitWindowToUsableBounds(false);
+            }
+            @Override public void componentMoved(java.awt.event.ComponentEvent event) {
+                fitWindowToUsableBounds(false);
+            }
+        });
 
         analyzeCurrentPosition();
     }
@@ -4834,7 +4787,7 @@ public class ChessWindow extends JFrame {
 
         /*
          * The board paints its own dimming scrim using the exact same
-         * 640 x 640 coordinates as the chess squares.  Keeping the scrim in
+         * scaled coordinates as the chess squares. Keeping the scrim in
          * ChessBoardPanel removes the one-pixel/edge mismatch that can occur
          * when a separate Swing overlay is laid out independently.
          */
@@ -7520,6 +7473,7 @@ public class ChessWindow extends JFrame {
                 latest
         );
 
+        endgameStudyPanel.setPlayedLine(gameHistory, activeEndgameTablebase);
         endgameStudyPanel.setMoveReviewState(
                 endgameMoveReviewIndex,
                 gameHistory.size() - 1
@@ -7737,6 +7691,7 @@ public class ChessWindow extends JFrame {
                 displayed
         );
 
+        endgameStudyPanel.setPlayedLine(gameHistory, activeEndgameTablebase);
         endgameStudyPanel.setMoveReviewState(
                 endgameMoveReviewIndex,
                 lastIndex
@@ -8661,42 +8616,106 @@ public class ChessWindow extends JFrame {
                 boardPanel.getSetupBoardSnapshot(),
                 boardPanel.getSetupSideToMove()
         );
+        if (piecePalettePanel != null) {
+            piecePalettePanel.refreshSideToMove();
+        }
     }
 
 
-    /**
-     * Preserve the original board/palette design while reclaiming just enough
-     * vertical room in Setup for the full 640px board + original bottom
-     * PiecePalettePanel to fit above the taskbar.
-     *
-     * This does NOT change PiecePalettePanel itself.
-     */
+    /** Setup measures the board after reserving space for both palette rows. */
     private void updateBoardAreaInsetsForCurrentMode() {
+        if (boardArea == null) return;
+        boolean setup = boardPanel != null && boardPanel.isSetupMode();
+        boardArea.setBorder(BorderFactory.createEmptyBorder(setup ? 12 : 20, 20, setup ? 12 : 20, 12));
+        if (boardStack != null) {
+            boardStack.setBorder(setup ? new SetupBoardBorder() : null);
+            boardStack.setPreferredSize(boardPanel.getPreferredSize());
+        }
+        if (analysisArea != null) {
+            analysisArea.setBorder(BorderFactory.createEmptyBorder(setup ? 12 : 16, 6, setup ? 12 : 16, 16));
+        }
+    }
 
-        if (boardArea == null) {
-            return;
+    private final class BoardColumn extends JPanel {
+        private BoardColumn(LayoutManager layout) { super(layout); }
+
+        private int paletteHeight() {
+            return boardPanel.isSetupMode() && setupPaletteHost != null
+                    ? setupPaletteHost.getPreferredSize().height : 0;
         }
 
+        private int barWidth() {
+            return evaluationBar.isVisible() ? evaluationBar.getPreferredSize().width : 0;
+        }
 
-        boolean compactForSetup =
-                boardPanel != null
-                        && boardPanel.isSetupMode();
+        private int barSpace() {
+            return barWidth() == 0 ? 0 : barWidth() + ((BorderLayout) getLayout()).getHgap();
+        }
 
+        /** Each mode contributes only its own insets and optional palette/bar. */
+        private int boardSide(int width, int height) {
+            Insets outer = getInsets();
+            Insets frame = boardStack.getInsets();
+            return Math.min(boardPanel.getPreferredSize().width, ChessBoardPanel.squareWithin(
+                    width - outer.left - outer.right - frame.left - frame.right - barSpace(),
+                    height - outer.top - outer.bottom - frame.top - frame.bottom - paletteHeight()));
+        }
 
-        boardArea.setBorder(
-                BorderFactory.createEmptyBorder(
-                        compactForSetup
-                                ? 0
-                                : 20,
-                        20,
-                        compactForSetup
-                                ? 0
-                                : 20,
-                        12
-                )
-        );
+        @Override public Dimension getPreferredSize() {
+            if (boardStack == null) return super.getPreferredSize();
+            Insets outer = getInsets();
+            Insets frame = boardStack.getInsets();
+            int horizontal = frame.left + frame.right + outer.left + outer.right + barSpace();
+            int vertical = frame.top + frame.bottom + outer.top + outer.bottom + paletteHeight();
+            int naturalSide = boardPanel.getPreferredSize().width;
+            int height = workspace.getHeight() > 0 ? workspace.getHeight() : naturalSide + vertical;
+            // Setup's dashboard/palette constraints never participate in other modes.
+            int dashboardWidth = boardPanel.isSetupMode() ? 640 : analysisPanel.getPreferredSize().width + 22;
+            int width = workspace.getWidth() > 0 ? Math.max(0, workspace.getWidth() - dashboardWidth) : naturalSide + horizontal;
+            return new Dimension(boardSide(width, height) + horizontal, naturalSide + vertical);
+        }
+
+        @Override public void doLayout() {
+            Insets outer = getInsets();
+            Insets frame = boardStack.getInsets();
+            int side = boardSide(getWidth(), getHeight());
+            int x = outer.left + barSpace();
+            int width = side + frame.left + frame.right;
+            int height = side + frame.top + frame.bottom;
+            boardStack.setBounds(x, outer.top, width, height);
+            evaluationBar.setBounds(outer.left, outer.top + frame.top, barWidth(), side);
+            if (setupPaletteHost != null) {
+                setupPaletteHost.setBounds(x, outer.top + height, width, paletteHeight());
+            }
+        }
     }
 
+    /** Coordinates live outside ChessBoardPanel and follow its existing orientation. */
+    private final class SetupBoardBorder extends javax.swing.border.AbstractBorder {
+        @Override public Insets getBorderInsets(Component c) { return new Insets(11, 29, 27, 11); }
+        @Override public Insets getBorderInsets(Component c, Insets insets) {
+            insets.set(11, 29, 27, 11);
+            return insets;
+        }
+        @Override public void paintBorder(Component c, Graphics graphics, int x, int y, int width, int height) {
+            Graphics2D g = (Graphics2D) graphics.create();
+            g.setColor(darkTheme ? new Color(32, 51, 64) : new Color(202, 213, 224));
+            g.drawRect(x, y, width - 1, height - 1);
+            g.setColor(darkTheme ? new Color(177, 199, 219) : new Color(77, 99, 118));
+            g.setFont(new Font("Bahnschrift", Font.PLAIN, 17));
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            for (int i = 0; i < 8; i++) {
+                String rank = Integer.toString(boardPanel.isFlipped() ? i + 1 : 8 - i);
+                String file = Character.toString((char) ('a' + (boardPanel.isFlipped() ? 7 - i : i)));
+                Rectangle board = boardPanel.getBounds();
+                int center = (int) Math.round((i + 0.5) * board.width / 8.0);
+                g.drawString(rank, x + 15 - g.getFontMetrics().stringWidth(rank) / 2,
+                        y + board.y + center + (g.getFontMetrics().getAscent() - g.getFontMetrics().getDescent()) / 2);
+                g.drawString(file, x + board.x + center - g.getFontMetrics().stringWidth(file) / 2, y + height - 8);
+            }
+            g.dispose();
+        }
+    }
 
     private void refreshWorkspaceLayout() {
 
@@ -8757,11 +8776,11 @@ public class ChessWindow extends JFrame {
                         ),
                         BorderFactory.createEmptyBorder(
                                 compactForSetup
-                                        ? 2
+                                        ? 6
                                         : 10,
                                 20,
                                 compactForSetup
-                                        ? 2
+                                        ? 6
                                         : 10,
                                 18
                         )
@@ -8770,13 +8789,8 @@ public class ChessWindow extends JFrame {
 
 
         /*
-         * Setup deliberately removes 8 px from the header's top inset
-         * (10 -> 2) to preserve vertical room for the original two-row
-         * piece palette. Keep that compact header, but restore the action
-         * controls to their normal screen position by giving only the
-         * right-side action row those 8 px back internally.
-         *
-         * Normal / Endgame mode remains completely unchanged.
+         * Keep the existing Setup action-row alignment inside the compact
+         * header. Normal and Endgame use their original header spacing.
          */
         if (headerActionsWrapper != null) {
 
@@ -8795,130 +8809,56 @@ public class ChessWindow extends JFrame {
 
 
     private void resizeForCurrentMode() {
+        // Workspace preferences belong to child layout, not the user's frame.
+        // Startup alone chooses a preferred top-level size; navigation only fits
+        // an existing normal window if it extends beyond the usable display.
+        fitWindowToUsableBounds(false);
+    }
 
-        /*
-         * Do not knock a maximized window out of maximized state when Setup or
-         * Endgame is opened. The old setSize(...) call was the source of the
-         * bottom clipping / stray glyph fragments near the taskbar.
-         */
-        if ((getExtendedState()
-                & JFrame.MAXIMIZED_BOTH)
-                == JFrame.MAXIMIZED_BOTH) {
-
-            revalidate();
-            repaint();
-            return;
-        }
-
-
-        GraphicsConfiguration configuration =
-                getGraphicsConfiguration();
-
-
+    /** Insets are in AWT logical pixels, so this also respects Windows display scaling. */
+    static Rectangle usableWindowBounds(GraphicsConfiguration configuration) {
         if (configuration == null) {
+            return GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        }
+        Rectangle bounds = configuration.getBounds();
+        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(configuration);
+        return new Rectangle(bounds.x + insets.left, bounds.y + insets.top,
+                Math.max(1, bounds.width - insets.left - insets.right),
+                Math.max(1, bounds.height - insets.top - insets.bottom));
+    }
 
+    private void fitWindowToUsableBounds(boolean usePreferredSize) {
+        fitWindowToUsableBounds(usableWindowBounds(getGraphicsConfiguration()), usePreferredSize);
+    }
+
+    /** True for native maximization (including one axis), iconification, or AWT fullscreen. */
+    private boolean hasManagedWindowState() {
+        if ((getExtendedState() & (Frame.MAXIMIZED_BOTH | Frame.ICONIFIED)) != 0) return true;
+        for (GraphicsDevice device : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices()) {
+            if (device.getFullScreenWindow() == this) return true;
+        }
+        return false;
+    }
+
+    void fitWindowToUsableBounds(Rectangle usable, boolean usePreferredSize) {
+        // Check BEFORE touching native size hints: even minimum/maximum updates
+        // can resize a Windows peer and disturb its maximized/fullscreen state.
+        if (hasManagedWindowState()) {
             revalidate();
             repaint();
             return;
         }
-
-
-        Rectangle screenBounds =
-                configuration.getBounds();
-
-
-        Insets screenInsets =
-                Toolkit
-                        .getDefaultToolkit()
-                        .getScreenInsets(
-                                configuration
-                        );
-
-
-        int usableX =
-                screenBounds.x
-                        + screenInsets.left;
-
-        int usableY =
-                screenBounds.y
-                        + screenInsets.top;
-
-        int usableWidth =
-                Math.max(
-                        1,
-                        screenBounds.width
-                                - screenInsets.left
-                                - screenInsets.right
-                );
-
-        int usableHeight =
-                Math.max(
-                        1,
-                        screenBounds.height
-                                - screenInsets.top
-                                - screenInsets.bottom
-                );
-
-
-        Dimension preferred =
-                getPreferredSize();
-
-
-        int targetWidth =
-                Math.min(
-                        usableWidth,
-                        Math.max(
-                                1280,
-                                preferred.width
-                        )
-                );
-
-
-        int targetHeight =
-                Math.min(
-                        usableHeight,
-                        Math.max(
-                                800,
-                                preferred.height
-                        )
-                );
-
-
-        setSize(
-                targetWidth,
-                targetHeight
-        );
-
-
-        int maximumX =
-                usableX
-                        + usableWidth
-                        - targetWidth;
-
-        int maximumY =
-                usableY
-                        + usableHeight
-                        - targetHeight;
-
-
-        setLocation(
-                Math.max(
-                        usableX,
-                        Math.min(
-                                getX(),
-                                maximumX
-                        )
-                ),
-                Math.max(
-                        usableY,
-                        Math.min(
-                                getY(),
-                                maximumY
-                        )
-                )
-        );
-
-
+        // A Frame minimum can silently defeat the screen clamp. Keep the existing
+        // responsive minimum, but never inflate a user-resized normal window.
+        Dimension minimum = new Dimension(Math.min(1240, usable.width), Math.min(760, usable.height));
+        if (!minimum.equals(getMinimumSize())) setMinimumSize(minimum);
+        if (!usable.getSize().equals(getMaximumSize())) setMaximumSize(usable.getSize());
+        Dimension desired = usePreferredSize ? getPreferredSize() : getSize();
+        int width = Math.min(usable.width, Math.max(usePreferredSize ? 1280 : minimum.width, desired.width));
+        int height = Math.min(usable.height, Math.max(usePreferredSize ? 800 : minimum.height, desired.height));
+        int x = Math.max(usable.x, Math.min(getX(), usable.x + usable.width - width));
+        int y = Math.max(usable.y, Math.min(getY(), usable.y + usable.height - height));
+        if (!getBounds().equals(new Rectangle(x, y, width, height))) setBounds(x, y, width, height);
         revalidate();
         repaint();
     }
@@ -9236,6 +9176,8 @@ public class ChessWindow extends JFrame {
 
         hideBoardLoading();
         piecePalettePanel.cancelActiveDrag();
+        if (boardPanel.isSetupMode()) boardPanel.cancelSetupMode();
+        setupPaletteHost.setVisible(false);
         setAnalysisEngineSelectorEnabled(true);
 
         endgameProofGeneration++;
@@ -9290,6 +9232,11 @@ public class ChessWindow extends JFrame {
                 true
         );
 
+
+        // Home can leave Setup without going through Cancel/Analyze. Clear its
+        // coordinate border and compact header before laying out another mode.
+        updateBoardAreaInsetsForCurrentMode();
+        updateApplicationHeaderBorderForCurrentMode();
 
         analysisArea.revalidate();
         analysisArea.repaint();

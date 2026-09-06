@@ -3,6 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/ShaiBeekman/Chess-Engine?label=release)](https://github.com/ShaiBeekman/Chess-Engine/releases/latest)
 ![Java](https://img.shields.io/badge/Java-26-orange)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Download](https://img.shields.io/badge/Download-v1.0.1-2ea44f)](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.1/Chess-Engine-v1.0.1.zip)
 
 **A Java chess engine built around persistent graph exploration, exact endgame solving, and interactive analysis.**
 

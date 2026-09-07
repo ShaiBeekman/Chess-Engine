@@ -29,9 +29,7 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.MouseInfo;
 import java.awt.Point;
-import java.awt.PointerInfo;
 import java.awt.RenderingHints;
 import java.awt.Window;
 import java.awt.Toolkit;
@@ -63,6 +61,8 @@ public class PiecePalettePanel extends JPanel {
     private boolean darkTheme;
 
     private JWindow dragGhost;
+    // Retain only the hidden native peer between drops; explicit cancellation disposes it.
+    private JWindow idleDragGhost;
     private SolidPieceLabel dragGhostLabel;
     private boolean paletteDragActive;
     private final AWTEventListener globalMouseReleaseListener;
@@ -212,6 +212,7 @@ public class PiecePalettePanel extends JPanel {
 
 
         hideDragGhost();
+        scheduleDragPreparation();
     }
 
 
@@ -228,6 +229,7 @@ public class PiecePalettePanel extends JPanel {
         super.setVisible(
                 visible
         );
+        if (visible) scheduleDragPreparation();
     }
 
 
@@ -511,6 +513,8 @@ public class PiecePalettePanel extends JPanel {
         );
 
 
+        // Piece tiles do not accept composed text or need a native input method.
+        button.enableInputMethods(false);
         button.getAccessibleContext().setAccessibleName(button.getToolTipText());
         button.setRolloverEnabled(true);
 
@@ -552,12 +556,7 @@ public class PiecePalettePanel extends JPanel {
                                 true;
 
 
-                        showDragGhost(
-                                piece
-                        );
-
-
-                        updateDragGhostLocation();
+                        showDragGhost(piece, event.getLocationOnScreen());
                     }
 
 
@@ -571,7 +570,7 @@ public class PiecePalettePanel extends JPanel {
                         }
 
 
-                        updateDragGhostLocation();
+                        updateDragGhostLocation(event.getLocationOnScreen());
                     }
 
 
@@ -612,7 +611,7 @@ public class PiecePalettePanel extends JPanel {
                         }
 
 
-                        cancelActiveDrag();
+                        finishDrag();
                     }
                 };
 
@@ -666,42 +665,48 @@ public class PiecePalettePanel extends JPanel {
     // Drag ghost
     // =========================================================
 
+    private void scheduleDragPreparation() {
+        // Run after the setup transition, on the EDT. A queued cancellation/hide
+        // must not create another peer after leaving setup or closing the window.
+        SwingUtilities.invokeLater(() -> {
+            if (isShowing() && !paletteDragActive && dragGhost == null && idleDragGhost == null) {
+                prepareDragGhost();
+            }
+        });
+    }
+
+    private void prepareDragGhost() {
+        idleDragGhost = createDragGhost();
+        // Create the native peer while keeping it invisible; no synthetic input
+        // or visible offscreen window is needed to prepare the first drag.
+        idleDragGhost.addNotify();
+        idleDragGhost.validate();
+    }
+
+    private JWindow createDragGhost() {
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        JWindow ghost = owner == null ? new JWindow() : new JWindow(owner);
+        ghost.enableInputMethods(false);
+        ghost.setBackground(new java.awt.Color(0, 0, 0, 0));
+        ghost.getContentPane().setBackground(new java.awt.Color(0, 0, 0, 0));
+        ghost.setSize(64, 64);
+        ghost.setFocusableWindowState(false);
+        ghost.setAlwaysOnTop(true);
+        return ghost;
+    }
+
     private void showDragGhost(
-            Piece piece
+            Piece piece, Point mouse
     ) {
 
-        hideDragGhost();
-
-
-        Window owner =
-                SwingUtilities.getWindowAncestor(
-                        this
-                );
-
-
-        if (owner == null) {
-
-            dragGhost =
-                    new JWindow();
-
+        if (dragGhost != null) hideDragGhost();
+        if (idleDragGhost != null) {
+            dragGhost = idleDragGhost;
+            idleDragGhost = null;
+            dragGhost.getContentPane().removeAll();
         } else {
-
-            dragGhost =
-                    new JWindow(
-                            owner
-                    );
+            dragGhost = createDragGhost();
         }
-
-
-        dragGhost.setBackground(
-                new java.awt.Color(
-                        0,
-                        0,
-                        0,
-                        0
-                )
-        );
-
 
         dragGhostLabel =
                 new SolidPieceLabel(
@@ -711,6 +716,8 @@ public class PiecePalettePanel extends JPanel {
                         piece.color()
                 );
 
+
+        dragGhostLabel.enableInputMethods(false);
 
         dragGhostLabel.setFont(
                 new Font(
@@ -747,72 +754,46 @@ public class PiecePalettePanel extends JPanel {
 
 
         dragGhost.getContentPane()
-                .setBackground(
-                        new java.awt.Color(
-                                0,
-                                0,
-                                0,
-                                0
-                        )
-                );
-
-
-        dragGhost.getContentPane()
                 .add(
                         dragGhostLabel
                 );
 
 
-        dragGhost.setSize(
-                64,
-                64
-        );
-
-
-        dragGhost.setFocusableWindowState(
-                false
-        );
-
-
-        dragGhost.setAlwaysOnTop(
-                true
-        );
-
-
+        // Position before showing so the reused ghost never flashes at its old location.
+        updateDragGhostLocation(mouse);
         dragGhost.setVisible(
                 true
         );
     }
 
 
-    private void updateDragGhostLocation() {
-
-        if (dragGhost == null) {
-            return;
+    private void updateDragGhostLocation(Point mouse) {
+        if (dragGhost != null) {
+            // The event already carries screen coordinates. Avoid a native
+            // pointer query (and its first-use initialization) for every update.
+            dragGhost.setLocation(mouse.x - 32, mouse.y - 32);
         }
+    }
 
 
-        PointerInfo pointer =
-                MouseInfo.getPointerInfo();
-
-
-        if (pointer == null) {
-            return;
+    /** A completed drop hides the ghost without destroying its Windows peer. */
+    private void finishDrag() {
+        paletteDragActive = false;
+        if (dragGhost != null) {
+            dragGhost.setVisible(false);
+            idleDragGhost = dragGhost;
+            dragGhost = null;
+            dragGhostLabel = null;
         }
-
-
-        Point mouse =
-                pointer.getLocation();
-
-
-        dragGhost.setLocation(
-                mouse.x - 32,
-                mouse.y - 32
-        );
     }
 
 
     private void hideDragGhost() {
+
+        if (idleDragGhost != null) {
+            idleDragGhost.dispose();
+            idleDragGhost = null;
+        }
 
         if (dragGhost == null) {
             return;

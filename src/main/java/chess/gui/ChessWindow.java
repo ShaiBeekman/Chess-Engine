@@ -61,6 +61,50 @@ import java.util.zip.GZIPInputStream;
 
 public class ChessWindow extends JFrame {
 
+    private SwingWorker<PositionAnalysis, Void> explorationWorker;
+    private boolean manualPathPending;
+
+
+    private static final Font SETUP_COORDINATE_FONT =
+            new Font("Bahnschrift", Font.PLAIN, 17);
+    private static final java.util.concurrent.atomic.AtomicBoolean coordinateFontStarted =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Resolve/rasterize only Setup's coordinate alphabet while the GUI is built.
+     * Its first font-file/strike initialization otherwise stalls the first Setup
+     * paint. The worker owns an offscreen image, never paints Swing components,
+     * and uses the initial display scale and the border's existing text hints.
+     * Painting still uses the normal Java font path if preparation is unfinished.
+     */
+    private void prepareSetupCoordinateFont() {
+        if (!coordinateFontStarted.compareAndSet(false, true)) return;
+        java.awt.geom.AffineTransform transform =
+                getGraphicsConfiguration().getDefaultTransform();
+        Thread worker = new Thread(() -> {
+            java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
+                    512, 96, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = image.createGraphics();
+            try {
+                g.setTransform(transform);
+                g.setFont(SETUP_COORDINATE_FONT);
+                g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                        RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                FontMetrics metrics = g.getFontMetrics();
+                for (char ch : "abcdefgh12345678".toCharArray()) {
+                    String text = Character.toString(ch);
+                    metrics.stringWidth(text);
+                    g.drawString(text, 0, 32);
+                }
+            } finally {
+                g.dispose();
+            }
+        }, "setup-coordinate-font");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+
     // =========================================================
     // Persistent dovetail tuning
     // =========================================================
@@ -496,6 +540,7 @@ public class ChessWindow extends JFrame {
         }
 
 
+        prepareSetupCoordinateFont();
         setIconImage(ApplicationLogo.image());
         setDefaultCloseOperation(
                 JFrame.EXIT_ON_CLOSE
@@ -2768,6 +2813,11 @@ public class ChessWindow extends JFrame {
 
 
     private void stopGuiExplorationChain() {
+        stopGuiExplorationChain(true);
+    }
+
+
+    private void stopGuiExplorationChain(boolean refreshTelemetry) {
 
         automaticExplorationActive =
                 false;
@@ -2781,7 +2831,9 @@ public class ChessWindow extends JFrame {
         );
 
 
-        refreshSearchTelemetry();
+        if (refreshTelemetry) {
+            refreshSearchTelemetry();
+        }
     }
 
 
@@ -2903,6 +2955,8 @@ public class ChessWindow extends JFrame {
                         }
 
 
+                        if (boardPanel.deferUntilPieceInteractionEnds(this::done)) return;
+
                         try {
 
                             PositionAnalysis result =
@@ -2939,7 +2993,9 @@ public class ChessWindow extends JFrame {
                                     );
 
 
-                            if (livePath.isEmpty()) {
+                            if (manualPathPending) {
+                                restorePendingManualPath(result);
+                            } else if (livePath.isEmpty()) {
 
                                 analysisPanel.setAnalysis(
                                         result,
@@ -3144,6 +3200,7 @@ public class ChessWindow extends JFrame {
                 };
 
 
+        explorationWorker = worker;
         worker.execute();
     }
 
@@ -3682,6 +3739,20 @@ public class ChessWindow extends JFrame {
          */
         manualRedoHistory.clear();
 
+        // Background analysis owns the engine monitor. Keep real-board moves and
+        // history immediate; worker completion installs these exact graph edges
+        // before reconstructing the analysis path. Do not restart the search.
+        if (currentAnalysis == null
+                || (explorationWorker != null && !explorationWorker.isDone())) {
+            manualPathPending = true;
+            gameHistory.add(position);
+            previewHistory.clear();
+            requestStockfishComparison(position);
+            updateBackButton();
+            return;
+        }
+
+
 
         /*
          * IMPORTANT:
@@ -3788,6 +3859,31 @@ public class ChessWindow extends JFrame {
         updateBackButton();
     }
 
+
+    /** Apply moves recorded while a worker held the engine, after it completes. */
+    private void restorePendingManualPath(PositionAnalysis result) {
+        for (int index = 1; index < gameHistory.size(); index++) {
+            engine.ensureManualContinuation(gameHistory.get(index - 1), gameHistory.get(index));
+        }
+        manualPathPending = false;
+        analysisPanel.setAnalysis(result, gameHistory.size() > 1);
+        for (int index = 1; index < gameHistory.size(); index++) {
+            if (!analysisPanel.commitPositionToPath(gameHistory.get(index))) break;
+        }
+        previewHistory.clear();
+        Position selected = analysisPanel.getSelectedPosition();
+        if (analysisPanel.getPathDepth() > 0 && selected != null) {
+            engine.setExplorationFocus(selected);
+        } else {
+            engine.clearExplorationFocus();
+        }
+        if (selected != null && samePosition(selected, boardPanel.getPosition())) {
+            evaluationBar.setAnalysis(analysisPanel.getSelectedEvaluation(),
+                    analysisPanel.getSelectedOutcome(), analysisPanel.getSelectedMateDistance());
+        } else {
+            evaluationBar.setAnalysis(result.getEvaluation(), result.getOutcome(), result.getMateDistance());
+        }
+    }
 
     private String findManualMoveSan(
             Position parentPosition,
@@ -8383,7 +8479,9 @@ public class ChessWindow extends JFrame {
         }
 
 
-        stopGuiExplorationChain();
+        // The analysis panel is being hidden. Reading its synchronized telemetry
+        // here would block the EDT behind an in-flight startup analysis.
+        stopGuiExplorationChain(false);
 
 
         /*
@@ -8703,7 +8801,7 @@ public class ChessWindow extends JFrame {
             g.setColor(darkTheme ? new Color(32, 51, 64) : new Color(202, 213, 224));
             g.drawRect(x, y, width - 1, height - 1);
             g.setColor(darkTheme ? new Color(177, 199, 219) : new Color(77, 99, 118));
-            g.setFont(new Font("Bahnschrift", Font.PLAIN, 17));
+            g.setFont(SETUP_COORDINATE_FONT);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             for (int i = 0; i < 8; i++) {
                 String rank = Integer.toString(boardPanel.isFlipped() ? i + 1 : 8 - i);
@@ -10664,6 +10762,10 @@ public class ChessWindow extends JFrame {
                         }
 
 
+                        if (boardPanel.deferUntilPieceInteractionEnds(this::done)) {
+                            return;
+                        }
+
                         try {
 
                             PositionAnalysis result =
@@ -10682,6 +10784,16 @@ public class ChessWindow extends JFrame {
                              * root analysis merely because the board
                              * object has changed.
                              */
+                            // Manual play can outpace the initial worker. Synchronize
+                            // the recorded path now that it has released the engine
+                            // monitor, rather than blocking the mouse-release handler.
+                            for (int index = 1; index < gameHistory.size(); index++) {
+                                engine.ensureManualContinuation(
+                                        gameHistory.get(index - 1), gameHistory.get(index));
+                            }
+
+                            manualPathPending = false;
+
                             currentAnalysis =
                                     result;
 

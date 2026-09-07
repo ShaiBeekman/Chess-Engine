@@ -30,6 +30,16 @@ import java.util.function.Consumer;
 
 public class ChessBoardPanel extends JPanel {
 
+    private final List<Runnable> interactionCompletions = new ArrayList<>();
+
+    /** EDT-only: keep initial analysis layout out of an active piece gesture. */
+    boolean deferUntilPieceInteractionEnds(Runnable completion) {
+        if (dragSourceSquare == null) return false;
+        interactionCompletions.add(completion);
+        return true;
+    }
+
+
     private static final int BOARD_SIZE = 8;
     private static final int SQUARE_SIZE = 80;
     private static final int DRAG_THRESHOLD = 6;
@@ -214,6 +224,10 @@ public class ChessBoardPanel extends JPanel {
                         );
                     }
                 };
+
+        // This canvas handles chess gestures and shortcuts, not composed text.
+        // Avoid starting the Windows input method on the first mouse gesture.
+        enableInputMethods(false);
 
         addMouseListener(
                 mouseAdapter
@@ -1802,6 +1816,15 @@ public class ChessBoardPanel extends JPanel {
 
         dragging =
                 false;
+        if (!interactionCompletions.isEmpty()) {
+            List<Runnable> ready = new ArrayList<>(interactionCompletions);
+            interactionCompletions.clear();
+            // The release handler must finish committing the board/history first.
+            for (Runnable completion : ready) {
+                javax.swing.SwingUtilities.invokeLater(completion);
+            }
+        }
+
     }
 
 

@@ -25,6 +25,88 @@ public final class BoardInteractionVerificationMain {
     private static Robot robot;
     private static boolean nativeInput;
     private static Path output;
+    private static Window previousDragGhost;
+    private static boolean deferredStartupPresentationRan;
+
+    /** Setup must not read hidden telemetry while a background search owns the engine. */
+    private static void verifySetupDoesNotWaitForEngine() throws Exception {
+        edt(() -> {
+            Object engine = field(window, "engine", Object.class);
+            var locked = new java.util.concurrent.CountDownLatch(1);
+            var release = new java.util.concurrent.CountDownLatch(1);
+            var expired = new java.util.concurrent.atomic.AtomicBoolean();
+            Thread worker = new Thread(() -> {
+                synchronized (engine) {
+                    locked.countDown();
+                    try {
+                        expired.set(!release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        expired.set(true);
+                    }
+                }
+            }, "setup-engine-lock-verification");
+            worker.setDaemon(true);
+            worker.start();
+            try {
+                require(locked.await(30, java.util.concurrent.TimeUnit.SECONDS), "Engine lock unavailable");
+                call(window, "beginPositionSetup");
+                require(!expired.get(), "Setup waited for the background engine lock");
+                require(board().isSetupMode(), "Setup did not open while engine was busy");
+                require(!field(window, "automaticExplorationActive", Boolean.class), "Setup retained exploration");
+            } finally {
+                release.countDown();
+                worker.join(1000);
+            }
+            return null;
+        });
+    }
+    /** Called on the EDT before initial-analysis completion can be dispatched. */
+    private static void verifyStartupMovesOnEdt() throws Exception {
+        Object engine = field(window, "engine", Object.class);
+        var locked = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var expired = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread holder = new Thread(() -> {
+            synchronized (engine) {
+                locked.countDown();
+                try { expired.set(!release.await(5, java.util.concurrent.TimeUnit.SECONDS)); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); expired.set(true); }
+            }
+        }, "startup-manual-move-lock-verification");
+        holder.setDaemon(true);
+        holder.start();
+        try {
+            require(locked.await(30, java.util.concurrent.TimeUnit.SECONDS), "Engine lock unavailable");
+            require(field(window, "currentAnalysis", PositionAnalysis.class) == null,
+                    "Startup analysis already installed");
+            Point square = center(board(), new Square(4, 1));
+            board().dispatchEvent(new java.awt.event.MouseEvent(board(),
+                    java.awt.event.MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(),
+                    InputEvent.BUTTON1_DOWN_MASK, square.x, square.y, 1, false,
+                    java.awt.event.MouseEvent.BUTTON1));
+            require(board().deferUntilPieceInteractionEnds(() -> {
+                require(SwingUtilities.isEventDispatchThread(), "Presentation escaped EDT");
+                deferredStartupPresentationRan = true;
+            }), "Active gesture did not defer presentation");
+            require(!deferredStartupPresentationRan, "Presentation ran during gesture");
+            board().dispatchEvent(new java.awt.event.MouseEvent(board(),
+                    java.awt.event.MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(),
+                    0, square.x, square.y, 1, false, java.awt.event.MouseEvent.BUTTON1));
+            require(!deferredStartupPresentationRan, "Presentation interrupted release handler");
+            for (Move move : List.of(new Move(new Square(4,1), new Square(4,3)),
+                    new Move(new Square(4,6), new Square(4,4)),
+                    new Move(new Square(6,0), new Square(5,2)),
+                    new Move(new Square(1,7), new Square(2,5)))) {
+                call(board(), "executeMove", new Class<?>[]{Move.class}, move);
+                require(!expired.get(), "Startup manual move waited for engine lock");
+                require(board().getPosition().getBoard().getPiece(move.to()) != null,
+                        "Startup move did not update board");
+            }
+            require(field(window, "gameHistory", List.class).size() == 5,
+                    "Startup moves missing from history");
+        } finally { release.countDown(); holder.join(1000); }
+    }
 
     public static void main(String[] args) throws Exception {
         output=Path.of(args.length==0?"target/board-layout/live":args[0]);
@@ -40,8 +122,28 @@ public final class BoardInteractionVerificationMain {
                 window.setSize(1366,800);
                 window.setLocation(20,20);
                 window.setVisible(true);
+                if (!nativeInput) verifyStartupMovesOnEdt();
                 return null;
             });
+            if (!nativeInput) {
+                await("Startup manual path restored", () ->
+                        field(window, "currentAnalysis", PositionAnalysis.class) != null
+                        && field(window, "analysisPanel", AnalysisPanel.class).getPathDepth() == 4);
+                edt(() -> {
+                    require(deferredStartupPresentationRan, "Deferred presentation was lost");
+                    var engine = field(window, "engine", main.java.chess.engine.ChessEngine.class);
+                    List<?> history = field(window, "gameHistory", List.class);
+                    for (int index = 1; index < history.size(); index++) {
+                        Position parent = (Position) history.get(index - 1);
+                        Position child = (Position) history.get(index);
+                        require(engine.getImmediateContinuations(parent).stream().anyMatch(node ->
+                                node.getPosition().createPositionKey().equals(child.createPositionKey())),
+                                "Startup manual graph edge missing");
+                    }
+                    call(window, "returnToEngineHome");
+                    return null;
+                });
+            }
             await("Dovetail analysis", () -> {
                 PositionAnalysis analysis=field(window,"currentAnalysis",PositionAnalysis.class);
                 return analysis!=null && !analysis.getMoves().isEmpty();
@@ -68,7 +170,8 @@ public final class BoardInteractionVerificationMain {
             checkGeometry("stockfish-flipped");
             click(edt(() -> field(window,"flipBoardButton",JButton.class)));
 
-            click(edt(() -> field(window,"setupPositionButton",JButton.class)));
+            if (nativeInput) click(edt(() -> field(window,"setupPositionButton",JButton.class)));
+            else verifySetupDoesNotWaitForEngine();
             await("Setup", () -> board().isSetupMode());
             click(button(edt(() -> field(window,"piecePalettePanel",JPanel.class)),"Clear Board"));
             paletteDrag("white","king",new Square(4,0));
@@ -87,6 +190,7 @@ public final class BoardInteractionVerificationMain {
             click(edt(() -> field(window,"flipBoardButton",JButton.class)));
             click(button(edt(() -> field(window,"setupPanel",JPanel.class)),"Cancel"));
             await("Cancel", () -> !board().isSetupMode());
+            edt(() -> { require(previousDragGhost==null || !previousDragGhost.isDisplayable(),"Cancel retained native ghost"); return null; });
             checkGeometry("setup-cancel");
 
             click(edt(() -> field(window,"setupPositionButton",JButton.class)));
@@ -179,6 +283,11 @@ public final class BoardInteractionVerificationMain {
         await(name+" mode", () -> field(window,"analysisEngineMode",Object.class).toString().equals(name.toUpperCase()));
     }
     private static void paletteDrag(String color,String type,Square target) throws Exception {
+        await("Prepared invisible drag window", () -> {
+            Window idle=field(field(window,"piecePalettePanel",PiecePalettePanel.class),"idleDragGhost",Window.class);
+            return idle!=null && idle.isDisplayable() && !idle.isVisible();
+        });
+        previousDragGhost=edt(() -> field(field(window,"piecePalettePanel",PiecePalettePanel.class),"idleDragGhost",Window.class));
         AbstractButton tile=edt(() -> buttons(field(window,"piecePalettePanel",JPanel.class)).stream()
                 .filter(b -> b.getToolTipText()!=null && b.getToolTipText().toLowerCase().contains(color)
                         && b.getToolTipText().toLowerCase().contains(type)).findFirst().orElseThrow());
@@ -188,7 +297,13 @@ public final class BoardInteractionVerificationMain {
             return piece!=null && piece.type().toString().equalsIgnoreCase(type) && piece.color().toString().equalsIgnoreCase(color);
         });
         edt(() -> { PiecePalettePanel palette=field(window,"piecePalettePanel",PiecePalettePanel.class);
-            require(field(palette,"dragGhost",Window.class)==null,"Drag ghost was not cleaned up"); return null; });
+            require(field(palette,"dragGhost",Window.class)==null,"Active drag ghost was not cleared");
+            Window idle=field(palette,"idleDragGhost",Window.class);
+            require(idle!=null && idle.isDisplayable() && !idle.isVisible(),"Completed drop must retain only a hidden ghost");
+            if(previousDragGhost!=null && previousDragGhost.isDisplayable())
+                require(idle==previousDragGhost,"Repeated drops recreated the native window");
+            previousDragGhost=idle;
+            return null; });
     }
     private static void dragSquare(Square from,Square to) throws Exception { drag(screenSquare(from),screenSquare(to)); }
     private static Point screenSquare(Square square) throws Exception {

@@ -1,4 +1,4 @@
-# v1.0 Release Verification
+# Release Verification
 
 ## M87 automated gate
 
@@ -141,13 +141,15 @@ Validated SHA-256:
 ```
 
 
-## v1.0.2 maintenance release preparation
+## Historical v1.0.2 JAR maintenance preparation (superseded)
 
-The official logo maintenance release is v1.0.2. The earlier unpublished local
+This records the earlier JAR preparation, before the corrected branded Windows
+app-image release. Its artifact hashes are historical, not the current download.
+The official logo maintenance release was prepared as v1.0.2. The earlier unpublished local
 logo preparation used v1.0.1 in error and is superseded by this fresh build.
 The already-published v1.0.1 release (Setup/Endgame redesign), its tag at
 `10a08c4b515af7d2a44f5d90dd9d0c3b55976379`, and its published assets remain unchanged.
-The README download badge targets the v1.0.2 complete ZIP for the upcoming release.
+At that preparation, the README badge targeted the v1.0.2 complete JAR ZIP.
 
 Prepared from `78755799a7423fb4ed2c54194d38b7f8ec4a335c` plus the v1.0.2
 version/documentation correction. No production Java, logo artwork, runtime
@@ -223,3 +225,98 @@ Stockfish is optional and not bundled. There is no native EXE/installer icon to
 verify. GUI checks were automated on the local Windows desktop; no fresh-VM or
 comprehensive manual visual test is claimed. The published v1.0.1 release and
 assets were not changed. No commit, tag, push, or publication was performed.
+
+
+## v1.0.3 responsiveness release preparation
+
+Prepared from responsiveness commit `f2faee8134eddbf1eb5c4e537e97f668446cc945`
+plus version/documentation changes only. No additional production behavior changes
+are part of this release preparation. Published v1.0.2 remains unchanged.
+
+The Windows package uses `Chess Engine.exe`, the official blue/teal branding,
+bundled Java 26, all 36 unchanged tablebases, and optional Stockfish support.
+Users extract the complete `Chess-Engine-v1.0.3-windows.zip`; no separate Java
+installation is required. The internal JAR is `app/chess-engine-1.0.3.jar`.
+
+### Final Windows artifact
+
+- File: `target/Chess-Engine-v1.0.3-windows.zip`
+- Bytes: **249,459,119**
+- SHA-256: `cff024b291135ae168c45d60450611406b905154bf8a9c79028d8f671acc7143`
+- App-image: `target/windows-v1.0.3/Chess Engine/`
+- Extracted file bytes: **288,769,419** across **186 files**.
+- Launcher: `Chess Engine.exe`; internal JAR: `app/chess-engine-1.0.3.jar`.
+
+`package-windows.ps1` performed a fresh `mvn -B clean package`, followed by
+jdeps/jlink/jpackage and ZIP creation. Its existing version discovery reads the
+POM; no script changes were needed. The final ZIP was extracted outside the
+checkout and its bundled runtime and JAR were used for release verification.
+
+### Verification results
+
+| Verification | Result |
+| --- | --- |
+| Clean Maven build and Windows app-image creation | PASS |
+| Core chess / persistent graph / FEN gate | PASS |
+| Frozen Dovetail search gate | PASS |
+| Frozen Hybrid search gate | PASS |
+| Three-piece packaged tablebase gate | PASS |
+| 30-family four-piece catalog gate | PASS |
+| Endgame move-controller / practice-strength gate | PASS |
+| Stockfish process / forced-mate gate | PASS |
+| KPKP packed runtime with 128 MiB heap | PASS |
+| BoardInteractionVerificationMain | PASS |
+| Busy batch/manual-history graph handoff | PASS |
+| SetupLayoutVerificationMain | PASS |
+| FourPieceStudyIntegrationVerificationMain | PASS |
+| Packaged PNG and primary window icon | PASS |
+| Native EXE startup, early moves, and shutdown | PASS; automation caveat below |
+| ZIP CRC and strict release-file allowlist | PASS |
+
+All eight release gates passed sequentially in 796.294 seconds. GUI checks covered
+startup moves while the engine lock was occupied, immediate history updates,
+persistent graph/path restoration after analysis, deferred presentation during a
+piece gesture, Dovetail/Hybrid/Stockfish, white/black palette drops, existing-piece
+movement/removal, board flip, Cancel/re-entry, and endgame navigation. A separate
+busy-batch check confirmed manual history and the selected graph endpoint after
+the worker handed control back.
+
+The pristine EXE was launched from the extracted ZIP with Java/Maven removed
+from PATH and JAVA_HOME cleared. In a successful foreground-owned native mouse
+run, the first press occurred 99 ms after the board rendered. Visible updates
+were detected 123, 225, 168, and 187 ms after release for four successive white
+and black moves. These are external capture/check measurements, not isolated
+handler timings. No multi-second first-move stall occurred in that run, and
+normal window shutdown completed. A separate module-path inspection confirmed the
+loaded JVM was the extracted image's `runtime/bin/server/jvm.dll`.
+
+The release contains exactly the expected launcher, internal application files,
+bundled runtime, LICENSE, runtime README, Stockfish placeholder, and 36 tablebases.
+Every tablebase matches the pinned original archive byte-for-byte. All 504 Java
+class files match the approved responsiveness test build; only version metadata
+and release documentation changed. The PNG matches the official blue/teal master,
+and all seven embedded EXE icon frames match the ICO (16, 24, 32, 48, 64, 128,
+256 pixels). EXE and Maven version metadata are 1.0.3. No source, IDE, temporary,
+profiling, nested target directory, or absolute developer path leaked into the ZIP.
+
+### Verification environment and limitations
+
+The full gate used a temporary process-local 768 MiB heap cap; the KPKP child
+explicitly used 128 MiB. GUI/check helpers used 512 MiB. The native EXE mouse run
+used normal packaged settings without a heap override. No packaged runtime
+settings changed. Stockfish was supplied explicitly for relevant checks; it
+remains optional and is not bundled.
+
+Native input automation was not uniformly reliable on the local desktop:
+initial attempts clicked before the first board paint or lacked foreground
+ownership; the optional Robot run passed its first moves but timed out on Back.
+The foreground-owned native EXE run above passed. Repeat attempts confirmed
+Windows denied foreground activation and therefore did not constitute repeat
+interaction tests. The deterministic GUI suite passed in full. These results do
+not claim a fresh-VM or comprehensive hands-on visual test, nor consumer
+SmartScreen/code-signing validation.
+
+Verification helpers/logs were kept outside release contents. The original
+published v1.0.2 ZIP remains unchanged (SHA-256
+`f80e0b3e7e19e1af01cecc329010c665aca211e1f67bac6cff2d14a473ba3205`).
+No commit, tag, push, release modification, or upload was performed.

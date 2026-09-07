@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/ShaiBeekman/Chess-Engine?label=release)](https://github.com/ShaiBeekman/Chess-Engine/releases/latest)
 ![Java](https://img.shields.io/badge/Java-26-orange)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Download](https://img.shields.io/badge/Download-v1.0.2-2ea44f)](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.2/Chess-Engine-v1.0.2.zip)
+[![Download](https://img.shields.io/badge/Download-v1.0.3-2ea44f)](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.3/Chess-Engine-v1.0.3-windows.zip)
 
 <p align="center">
   <img src="assets/logo/chess-engine-logo.png" alt="Chess Engine logo" width="240">
@@ -99,13 +99,16 @@ Five-piece and larger tablebases are outside the v1.0 scope.
 
 ## Windows Quick Start
 
-For the new Windows app-image package, extract the **complete ZIP** and double-click
+Download `Chess-Engine-v1.0.3-windows.zip`, extract the **complete ZIP**, and double-click
 **`Chess Engine.exe`**. Java 26 is bundled; no separate Java or Maven installation
 is needed. Keep `app/`, `runtime/`, and `tablebases/` beside the EXE. Stockfish is
 optional; place its executable in the adjacent `stockfish/` folder.
 
-This packaging is currently prepared locally; the already-published v1.0.2
-JAR-based release has not been replaced.
+v1.0.3 is a performance-maintenance release. Early manual moves update the board
+and history immediately while background analysis continues, then join the same
+persistent position graph. Analysis updates wait for active piece gestures to
+finish; palette dragging and first-use Setup rendering also receive responsiveness
+fixes. Automatic analysis, chess rules, and search behavior are preserved.
 
 ## Build and Run
 
@@ -127,7 +130,7 @@ mvn clean package
 Run the application:
 
 ```bash
-java -jar target/chess-engine-1.0.2.jar
+java -jar target/chess-engine-1.0.3.jar
 ```
 
 The application can also be launched directly from IntelliJ with:
@@ -147,15 +150,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\package-windows.ps1 -JdkHo
 
 This runs a clean build, derives runtime modules using `jdeps`, bundles Java with
 `jlink`, and creates the icon-branded launcher using `jpackage --type app-image`.
-Output: `target/windows-v1.0.2/Chess Engine/Chess Engine.exe` and
-`target/Chess-Engine-v1.0.2-windows.zip`. The JAR is internal; launch the EXE.
+Output: `target/windows-v1.0.3/Chess Engine/Chess Engine.exe` and
+`target/Chess-Engine-v1.0.3-windows.zip`. The JAR is internal; launch the EXE.
 
 ### Configure Stockfish
 
 The UCI client looks for Stockfish automatically in several common project/user locations. For an explicit path, use either the JVM property:
 
 ```bash
-java -Dstockfish.path="/full/path/to/stockfish" -jar target/chess-engine-1.0.2.jar
+java -Dstockfish.path="/full/path/to/stockfish" -jar target/chess-engine-1.0.3.jar
 ```
 
 or the environment variable:
@@ -168,7 +171,7 @@ On PowerShell, for example:
 
 ```powershell
 $env:STOCKFISH_PATH="C:\path\to\stockfish-windows-x86-64-avx2.exe"
-java -jar target\chess-engine-1.0.2.jar
+java -jar target\chess-engine-1.0.3.jar
 ```
 
 See [`docs/RUNTIME-ASSETS.md`](docs/RUNTIME-ASSETS.md) for tablebase and Stockfish details.

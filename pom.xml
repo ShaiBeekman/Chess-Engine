@@ -7,7 +7,7 @@
 
     <groupId>io.github.shaibeekman</groupId>
     <artifactId>chess-engine</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 
     <name>Chess Engine</name>
     <description>
@@ -21,7 +21,7 @@
     </properties>
 
     <build>
-        <finalName>chess-engine-1.0.0</finalName>
+        <finalName>chess-engine-${project.version}</finalName>
 
         <!--
             Generated tablebase binaries are runtime/release assets and are

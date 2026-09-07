@@ -139,3 +139,71 @@ Validated SHA-256:
 1d978c235880fd58d92acf5da675eff66130ddfd74d593feb7e9fd7c2834229f  Chess-Engine-v1.0.0.jar
 46b64d8f7ff89055f1c8d21cada442515d63aff041b3bcc824f7cefbd70b4bca  Chess-Engine-v1.0.0-tablebases.zip
 ```
+
+
+## v1.0.1 maintenance release preparation
+
+Prepared locally from `fe8a13a995ca9c001fc6428e7b2b0312197c789d` plus the
+v1.0.1 Maven/version documentation changes. No engine or GUI behavior changes
+were made during release preparation. Historical verification above is preserved.
+
+Artifacts are in `target/release-v1.0.1/`. The full ZIP was assembled from the
+clean v1.0.1 JAR and the verified v1.0.0 tablebase archive, never the logo-preview
+ZIP. The separately versioned tablebase ZIP is byte-identical to v1.0.0.
+
+The Windows layout remains a runnable JAR beside `tablebases/` and the optional
+`stockfish/` folder. The complete ZIP additionally includes the official ICO,
+license, and concise launch instructions. The Stockfish note now refers to the
+actual JAR launch command instead of a nonexistent batch launcher.
+
+### Artifact integrity
+
+File | Bytes | SHA-256
+--- | ---: | ---
+Chess-Engine-v1.0.1.zip | 216647138 | a35a4f07ca01098ba5067458df91f369bf7a7d18388b56c75e741f9ebf6d09ac
+Chess-Engine-v1.0.1.jar | 2741539 | 369e5e1f678514ace8d793465858d6d2ff53e1da2bf0c32501ef71cc6a429cbb
+Chess-Engine-v1.0.1-tablebases.zip | 213899435 | 46b64d8f7ff89055f1c8d21cada442515d63aff041b3bcc824f7cefbd70b4bca
+SHA256SUMS.txt | 284 | 1d8c18d7cb0cd508ef255037ab05e45f2ff0796306a4f3cddf37dcddb2cf4635
+
+The full ZIP has exactly 41 files: the v1.0.1 JAR, six three-piece tablebases,
+thirty four-piece tablebases, ICO, license, launch instructions, and Stockfish
+note. A strict file allowlist and ZIP CRC check passed. Every tablebase matches
+the verified v1.0.0 data byte-for-byte. No preview, source, IDE, build directory,
+temporary file, or test log is included. The embedded JAR matches the standalone
+artifact; its Maven metadata is 1.0.1 and its PNG matches the repository master.
+
+### Verification results
+
+- `mvn -B clean package`: PASS on Java 26.0.2.1.
+- Full `main.java.chess.release.V1ReleaseRegressionMain`: all 8 gates PASS,
+  including core chess/graph/FEN, frozen Dovetail and Hybrid search, three-piece
+  resource loading, all 30 four-piece assets, endgame move control, Stockfish 18
+  forced-mate smoke, and isolated 128 MiB KPKP runtime verification.
+- `main.java.chess.gui.ApplicationLogoVerificationMain`: PASS; the primary window
+  opens with the unchanged PNG loaded from the extracted release JAR.
+- `main.java.chess.endgame.FourPieceStudyIntegrationVerificationMain`: PASS;
+  includes the unified runtime 2-v-2 probe.
+- `main.java.chess.gui.BoardInteractionVerificationMain`: PASS from the extracted
+  final JAR, including Setup and Endgame interactions.
+- Normal `javaw -jar Chess-Engine-v1.0.1.jar` startup and window closure: PASS.
+
+Tests ran from an extraction of the final ZIP in a fresh directory outside the
+checkout. The application and tablebase gates used the extracted JAR/data.
+The logo check additionally used Maven's test classes and original PNG solely
+as its verification harness/reference. Stockfish was supplied via a JVM-local
+`-Dstockfish.path` argument; no user configuration was changed.
+
+The first full-suite attempt exhausted the host Windows paging-file commitment
+in the catalog gate (native JVM allocation failure, not a checksum failure).
+The complete suite then passed with process-local `JAVA_TOOL_OPTIONS=-Xmx768m`.
+The KPKP child still explicitly used and confirmed `-Xmx128m`. No runtime flag
+or application change was added to the release. Logs, including the failed
+attempt, are retained in `target/release-verification-v1.0.1/`.
+
+### Limits
+
+This retains the v1.0.0 distribution model: Java 26 is required separately and
+Stockfish is optional and not bundled. There is no native EXE/installer whose
+icon can be verified. GUI startup/icon and interaction checks were automated on
+the local Windows desktop; no new clean-VM or comprehensive manual visual test
+is claimed. No commit, tag, push, or GitHub release was created during preparation.

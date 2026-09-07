@@ -34,6 +34,13 @@
                     <exclude>**/tablebases/**</exclude>
                 </excludes>
             </resource>
+            <!-- One master logo serves the README and packaged Swing application. -->
+            <resource>
+                <directory>assets</directory>
+                <includes>
+                    <include>logo/chess-engine-logo.png</include>
+                </includes>
+            </resource>
         </resources>
 
         <plugins>

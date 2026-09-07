@@ -496,6 +496,7 @@ public class ChessWindow extends JFrame {
         }
 
 
+        setIconImage(ApplicationLogo.image());
         setDefaultCloseOperation(
                 JFrame.EXIT_ON_CLOSE
         );

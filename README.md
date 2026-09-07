@@ -97,6 +97,16 @@ The `KP-KP` tablebase includes en-passant-aware state handling. Its v1.0 packed 
 
 Five-piece and larger tablebases are outside the v1.0 scope.
 
+## Windows Quick Start
+
+For the new Windows app-image package, extract the **complete ZIP** and double-click
+**`Chess Engine.exe`**. Java 26 is bundled; no separate Java or Maven installation
+is needed. Keep `app/`, `runtime/`, and `tablebases/` beside the EXE. Stockfish is
+optional; place its executable in the adjacent `stockfish/` folder.
+
+This packaging is currently prepared locally; the already-published v1.0.2
+JAR-based release has not been replaced.
+
 ## Build and Run
 
 ### Requirements
@@ -125,6 +135,20 @@ The application can also be launched directly from IntelliJ with:
 ```text
 main.java.chess.Main
 ```
+
+### Build the Windows application image
+
+On Windows x64, with Maven and JDK 26, use the verified original tablebase archive
+listed in [Runtime Assets](docs/RUNTIME-ASSETS.md):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\package-windows.ps1 -JdkHome $env:JAVA_HOME -TablebaseArchive .\Chess-Engine-v1.0.0-tablebases.zip
+```
+
+This runs a clean build, derives runtime modules using `jdeps`, bundles Java with
+`jlink`, and creates the icon-branded launcher using `jpackage --type app-image`.
+Output: `target/windows-v1.0.2/Chess Engine/Chess Engine.exe` and
+`target/Chess-Engine-v1.0.2-windows.zip`. The JAR is internal; launch the EXE.
 
 ### Configure Stockfish
 

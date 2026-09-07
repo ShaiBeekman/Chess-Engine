@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/ShaiBeekman/Chess-Engine?label=release)](https://github.com/ShaiBeekman/Chess-Engine/releases/latest)
 ![Java](https://img.shields.io/badge/Java-26-orange)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Download](https://img.shields.io/badge/Download-v1.0.1-2ea44f)](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.1/Chess-Engine-v1.0.1.zip)
+[![Download](https://img.shields.io/badge/Download-v1.0.2-2ea44f)](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.2/Chess-Engine-v1.0.2.zip)
 
 <p align="center">
   <img src="assets/logo/chess-engine-logo.png" alt="Chess Engine logo" width="240">
@@ -117,7 +117,7 @@ mvn clean package
 Run the application:
 
 ```bash
-java -jar target/chess-engine-1.0.1.jar
+java -jar target/chess-engine-1.0.2.jar
 ```
 
 The application can also be launched directly from IntelliJ with:
@@ -131,7 +131,7 @@ main.java.chess.Main
 The UCI client looks for Stockfish automatically in several common project/user locations. For an explicit path, use either the JVM property:
 
 ```bash
-java -Dstockfish.path="/full/path/to/stockfish" -jar target/chess-engine-1.0.1.jar
+java -Dstockfish.path="/full/path/to/stockfish" -jar target/chess-engine-1.0.2.jar
 ```
 
 or the environment variable:
@@ -144,7 +144,7 @@ On PowerShell, for example:
 
 ```powershell
 $env:STOCKFISH_PATH="C:\path\to\stockfish-windows-x86-64-avx2.exe"
-java -jar target\chess-engine-1.0.1.jar
+java -jar target\chess-engine-1.0.2.jar
 ```
 
 See [`docs/RUNTIME-ASSETS.md`](docs/RUNTIME-ASSETS.md) for tablebase and Stockfish details.

@@ -48,10 +48,10 @@ mvn -B test-compile
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 
 $chessRoot = (Get-Location).Path
-$chessApp = Join-Path $chessRoot 'target\windows-v1.0.3\Chess Engine'
+$chessApp = Join-Path $chessRoot 'target\windows-v1.0.4\Chess Engine'
 $chessJava = Join-Path $chessApp 'runtime\bin\java.exe'
 $chessClasspath = (Join-Path $chessRoot 'target\test-classes') + ';' +
-    (Join-Path $chessApp 'app\chess-engine-1.0.3.jar')
+    (Join-Path $chessApp 'app\chess-engine-1.0.4.jar')
 $chessRun = Join-Path $env:TEMP ('chess-trainer-fix-' + [guid]::NewGuid())
 $chessSavedAppData = $env:APPDATA
 

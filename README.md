@@ -106,11 +106,11 @@ Download `Chess-Engine-v1.0.3-windows.zip`, extract the **complete ZIP**, and do
 is needed. Keep `app/`, `runtime/`, and `tablebases/` beside the EXE. Stockfish is
 optional; place its executable in the adjacent `stockfish/` folder.
 
-v1.0.3 is a performance-maintenance release. Early manual moves update the board
-and history immediately while background analysis continues, then join the same
-persistent position graph. Analysis updates wait for active piece gestures to
-finish; palette dragging and first-use Setup rendering also receive responsiveness
-fixes. Automatic analysis, chess rules, and search behavior are preserved.
+The current source and next patch package are **v1.0.4**. This patch keeps
+endgame moves and solution review synchronized, provides exact Hint/Give Up
+results, and preserves saved puzzle order through reset and restart. The download
+badge above continues to point to published v1.0.3 while v1.0.4 is prepared as a
+draft release. Build instructions below produce the v1.0.4 package.
 
 ## Build and Run
 
@@ -132,7 +132,7 @@ mvn clean package
 Run the application:
 
 ```bash
-java -jar target/chess-engine-1.0.3.jar
+java -jar target/chess-engine-1.0.4.jar
 ```
 
 The application can also be launched directly from IntelliJ with:
@@ -152,15 +152,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\package-windows.ps1 -JdkHo
 
 This runs a clean build, derives runtime modules using `jdeps`, bundles Java with
 `jlink`, and creates the icon-branded launcher using `jpackage --type app-image`.
-Output: `target/windows-v1.0.3/Chess Engine/Chess Engine.exe` and
-`target/Chess-Engine-v1.0.3-windows.zip`. The JAR is internal; launch the EXE.
+Output: `target/windows-v1.0.4/Chess Engine/Chess Engine.exe` and
+`target/Chess-Engine-v1.0.4-windows.zip`. The JAR is internal; launch the EXE.
 
 ### Configure Stockfish
 
 The UCI client looks for Stockfish automatically in several common project/user locations. For an explicit path, use either the JVM property:
 
 ```bash
-java -Dstockfish.path="/full/path/to/stockfish" -jar target/chess-engine-1.0.3.jar
+java -Dstockfish.path="/full/path/to/stockfish" -jar target/chess-engine-1.0.4.jar
 ```
 
 or the environment variable:
@@ -173,7 +173,7 @@ On PowerShell, for example:
 
 ```powershell
 $env:STOCKFISH_PATH="C:\path\to\stockfish-windows-x86-64-avx2.exe"
-java -jar target\chess-engine-1.0.3.jar
+java -jar target\chess-engine-1.0.4.jar
 ```
 
 See [`docs/RUNTIME-ASSETS.md`](docs/RUNTIME-ASSETS.md) for tablebase and Stockfish details.

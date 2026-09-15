@@ -1253,6 +1253,23 @@ public class ChessWindow extends JFrame {
     // Application header
     // =========================================================
 
+    private static String applicationVersionLabel() {
+        String version = System.getProperty("jpackage.app-version");
+        if (version == null || version.isBlank()) {
+            try (java.io.InputStream metadata = ChessWindow.class.getResourceAsStream(
+                    "/META-INF/maven/io.github.shaibeekman/chess-engine/pom.properties")) {
+                if (metadata != null) {
+                    java.util.Properties properties = new java.util.Properties();
+                    properties.load(metadata);
+                    version = properties.getProperty("version");
+                }
+            } catch (IOException ignored) {
+                // An IDE launch need not have packaged Maven metadata.
+            }
+        }
+        return version == null || version.isBlank() ? "Development" : "v" + version;
+    }
+
     private JPanel createApplicationHeader() {
 
         applicationHeader =
@@ -1654,7 +1671,7 @@ public class ChessWindow extends JFrame {
 
         versionBadgeLabel =
                 new JLabel(
-                        "v1.0"
+                        applicationVersionLabel()
                 );
 
 

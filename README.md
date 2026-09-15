@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/ShaiBeekman/Chess-Engine?label=release)](https://github.com/ShaiBeekman/Chess-Engine/releases/latest)
 ![Java](https://img.shields.io/badge/Java-26-orange)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Download](https://img.shields.io/badge/Download-v1.0.3-2ea44f)](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.3/Chess-Engine-v1.0.3-windows.zip)
+[![Download](https://img.shields.io/badge/Download-v1.0.4-2ea44f)](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.4/Chess-Engine-v1.0.4-windows.zip)
 
 <p align="center">
   <img src="assets/logo/chess-engine-logo.png" alt="Chess Engine logo" width="240">
@@ -29,7 +29,7 @@ Unlike a conventional engine centered on a single minimax search tree, this proj
 - **Position Setup mode** with free piece placement, side-to-move controls, material summary, live FEN output, undo/redo navigation, and arbitrary-position analysis.
 - **Exact 3- and 4-piece endgame solving** backed by generated tablebases.
 - **30 canonical four-piece material families** validated by the v1.0 release regression suite.
-- **Endgame Curriculum** with exact WDL/DTM feedback, ordered/randomized practice, hints, progress tracking, and adjustable practice strength.
+- **Endgame Curriculum** with exact WDL/DTM feedback, exact defense, hints, solution review, progress tracking, and saved Ordered/Shuffle puzzle sequences.
 - **Formal v1.0 regression gate** covering core chess rules, search, tablebases, endgame control, Stockfish integration, and packed-runtime memory behavior.
 
 ## Analysis Modes
@@ -97,20 +97,39 @@ The `KP-KP` tablebase includes en-passant-aware state handling. Its v1.0 packed 
 
 Five-piece and larger tablebases are outside the v1.0 scope.
 
-The trainer saves puzzle order and resumes the current attempt. Hint displays an exact move; Give Up reveals a selectable solution. Reset replays saved puzzles. See [trainer verification](docs/ENDGAME-TRAINER-FIX-VERIFICATION.md) and the [Qe7 repair report](docs/QE7-REPAIR-VERIFICATION.md) for behavior, regression coverage and Windows EXE verification.
+### Playing and reviewing endgames
+
+1. Click **Endgame** in the header, choose a family, and wait for the puzzle to load. Play the indicated side by clicking a piece and its destination, or dragging it there. The trainer accepts exact-best moves and plays the opponent's exact reply automatically; other legal moves are returned with "Not the best move" feedback.
+2. Click **Hint** to display an exact move for the position currently shown. Hint leaves the board in place and marks the attempt as assisted.
+3. Click **Give Up** to end the attempt and reveal its exact continuation in **SOLUTION / MOVE REVIEW**. Wait for the solution to finish loading.
+4. Click a solution row, such as **Qe7**, to show the position after that move. Use **Previous Move** / **Next Move** or the **Left / Right arrow keys** to step through the line. Click **START** or press **Up** for the starting position; **Down** jumps to the final position. The board and turn indicator follow the selected row.
+5. To play the puzzle again after Give Up, click **Reset** in the application header. This clears the current attempt and solution, restores that puzzle's original position, and enables play once loading finishes.
+
+Before giving up, select a row in **PLAYED LINE / MOVE REVIEW** or use **Previous Move** to review your played moves. Earlier positions are read-only; return to the latest played move to continue an unfinished attempt. Solution review is read-only throughout, and its moves do not become played moves. Assisted or surrendered attempts do not earn mastery.
+
+**Next** in Training Actions advances to the next puzzle. Saved puzzles, their order, and the current attempt survive closing and reopening the application. The family reset and **Reset All Endgame Progress** clear attempts and mastery after confirmation, then replay the saved sequence from its beginning. They preserve the puzzles and their order; only an explicit **Ordered / Shuffle** change reorders the collection.
+
+See [trainer verification](docs/ENDGAME-TRAINER-FIX-VERIFICATION.md) and the [Qe7 repair report](docs/QE7-REPAIR-VERIFICATION.md) for repair evidence, regression coverage, and Windows EXE verification.
 
 ## Windows Quick Start
 
-Download `Chess-Engine-v1.0.3-windows.zip`, extract the **complete ZIP**, and double-click
-**`Chess Engine.exe`**. Java 26 is bundled; no separate Java or Maven installation
-is needed. Keep `app/`, `runtime/`, and `tablebases/` beside the EXE. Stockfish is
-optional; place its executable in the adjacent `stockfish/` folder.
+Download [**Chess-Engine-v1.0.4-windows.zip**](https://github.com/ShaiBeekman/Chess-Engine/releases/download/v1.0.4/Chess-Engine-v1.0.4-windows.zip),
+extract the **complete ZIP** to a writable folder, and double-click
+**`Chess Engine.exe`** inside the extracted **Chess Engine** folder.
 
-The current source and next patch package are **v1.0.4**. This patch keeps
-endgame moves and solution review synchronized, provides exact Hint/Give Up
-results, and preserves saved puzzle order through reset and restart. The download
-badge above continues to point to published v1.0.3 while v1.0.4 is prepared as a
-draft release. Build instructions below produce the v1.0.4 package.
+The Windows ZIP contains **Java 26 and all 36 required tablebases** (6 three-piece
+and 30 four-piece assets). No separate Java or Maven installation is needed.
+Keep `app/`, `runtime/`, and `tablebases/` beside the EXE. Stockfish is optional;
+place its executable in the adjacent `stockfish/` folder.
+
+## v1.0.4 Changes
+
+[**v1.0.4**](https://github.com/ShaiBeekman/Chess-Engine/releases/tag/v1.0.4) is the latest stable release.
+
+- Repaired manual endgame movement, including continued play after the automatic reply.
+- Hint shows an exact move; Give Up reveals a selectable solution and handles overlapping help requests.
+- Synchronized the board, played history, solution selection, and turn indicator during review.
+- Preserved saved puzzle order across resets and restarts, with the current attempt restored on reopening.
 
 ## Build and Run
 
@@ -129,7 +148,7 @@ From the repository root:
 mvn clean package
 ```
 
-Run the application:
+Maven creates `target/chess-engine-1.0.4.jar`, as configured in `pom.xml`. Run it with:
 
 ```bash
 java -jar target/chess-engine-1.0.4.jar
@@ -152,8 +171,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\package-windows.ps1 -JdkHo
 
 This runs a clean build, derives runtime modules using `jdeps`, bundles Java with
 `jlink`, and creates the icon-branded launcher using `jpackage --type app-image`.
-Output: `target/windows-v1.0.4/Chess Engine/Chess Engine.exe` and
-`target/Chess-Engine-v1.0.4-windows.zip`. The JAR is internal; launch the EXE.
+The packaging script reads version `1.0.4` from `pom.xml` and produces:
+
+| Output | Path |
+| --- | --- |
+| Windows launcher | `target/windows-v1.0.4/Chess Engine/Chess Engine.exe` |
+| Internal application JAR | `target/windows-v1.0.4/Chess Engine/app/chess-engine-1.0.4.jar` |
+| Complete Windows ZIP | `target/Chess-Engine-v1.0.4-windows.zip` |
+
+Launch the EXE from the complete app image.
 
 ### Configure Stockfish
 
@@ -180,7 +206,9 @@ See [`docs/RUNTIME-ASSETS.md`](docs/RUNTIME-ASSETS.md) for tablebase and Stockfi
 
 ## v1.0 Release Verification
 
-The release candidate has a dedicated automated regression entry point:
+The results below were recorded for the original v1.0 release and are preserved as historical verification.
+
+The v1.0 release candidate has a dedicated automated regression entry point:
 
 ```text
 main.java.chess.release.V1ReleaseRegressionMain

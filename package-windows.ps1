@@ -13,8 +13,11 @@ if ($archive.StartsWith($targetRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Keep the input tablebase archive outside target; Maven clean removes target.'
 }
 $expectedTablebases = '46b64d8f7ff89055f1c8d21cada442515d63aff041b3bcc824f7cefbd70b4bca'
-if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedTablebases) {
-    throw 'Use the verified original Chess-Engine-v1.0.0-tablebases.zip; see docs/RUNTIME-ASSETS.md.'
+# The original release now publishes a combined ZIP. Both inputs contain the same tablebases.
+$expectedOriginalBundle = '8724f384ac3d07b996f3fa83136b11fef618e53ba09e23368170b0f4b5430ccd'
+$archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($archiveHash -notin @($expectedTablebases, $expectedOriginalBundle)) {
+    throw 'Use the verified Chess-Engine-v1.0.0-tablebases.zip or Chess-Engine-v1.0.0.zip; see docs/RUNTIME-ASSETS.md.'
 }
 if (-not $JdkHome) { throw 'Supply -JdkHome or set JAVA_HOME to JDK 26.' }
 $jdk = (Resolve-Path -LiteralPath $JdkHome).Path
@@ -53,7 +56,20 @@ try {
     & (Join-Path $jdk 'bin\jpackage.exe') -J-Xmx256m --type app-image --name 'Chess Engine' --app-version $version --vendor 'Chess Engine' --description 'Chess Engine desktop application' --input $inputDir --main-jar $jarName --main-class main.java.chess.Main --runtime-image $runtime --icon (Join-Path $root 'assets\logo\chess-engine-logo.ico') --java-options '-Duser.dir=$APPDIR\..' --dest $destination
     if ($LASTEXITCODE -ne 0) { throw 'jpackage failed.' }
     $image = Join-Path $destination 'Chess Engine'
-    Expand-Archive -LiteralPath $archive -DestinationPath $image
+    # Copy only runtime tablebases, never an older JAR or launcher from a combined release.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $tablebaseZip = [IO.Compression.ZipFile]::OpenRead($archive)
+    try {
+        $assetRoot = [IO.Path]::GetFullPath((Join-Path $image 'tablebases')) + [IO.Path]::DirectorySeparatorChar
+        foreach ($entry in $tablebaseZip.Entries) {
+            $relative = $entry.FullName.Replace('\', '/')
+            if (-not $relative.StartsWith('tablebases/', [StringComparison]::Ordinal) -or $relative.EndsWith('/')) { continue }
+            $assetPath = [IO.Path]::GetFullPath((Join-Path $image $relative))
+            if (-not $assetPath.StartsWith($assetRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid tablebase archive path.' }
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($assetPath)) -Force | Out-Null
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $assetPath, $false)
+        }
+    } finally { $tablebaseZip.Dispose() }
     $three = @(Get-ChildItem -LiteralPath (Join-Path $image 'tablebases') -File -Filter '*.tb')
     $four = @(Get-ChildItem -LiteralPath (Join-Path $image 'tablebases\four-piece') -File -Filter '*.ftb.gz')
     if ($three.Count -ne 6 -or $four.Count -ne 30) { throw 'Incomplete tablebase distribution.' }

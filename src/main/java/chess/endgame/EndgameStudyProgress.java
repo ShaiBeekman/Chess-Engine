@@ -29,6 +29,22 @@ public final class EndgameStudyProgress {
         SHUFFLE
     }
 
+    public record Session(int index, List<String> history, boolean clean, boolean attemptRecorded, boolean givenUp) {
+        public Session {
+            if (index < 0) throw new IllegalArgumentException("Invalid sequence position.");
+            history = List.copyOf(history);
+        }
+    }
+
+    private final Map<String, Session> sessions = new LinkedHashMap<>();
+    private String selectedFamily = "Mixed";
+    public synchronized Session session(String family) { return sessions.get(family); }
+    public synchronized void setSession(String family, Session session) { sessions.put(family, session); }
+    public synchronized void clearSession(String family) { sessions.remove(family); }
+    public synchronized Map<String, Session> sessionSnapshot() { return new LinkedHashMap<>(sessions); }
+    public synchronized String selectedFamily() { return selectedFamily; }
+    public synchronized void selectFamily(String family) { if (family != null && !family.isBlank()) selectedFamily = family; }
+
     public record PositionProgress(
             Status status,
             int attempts,
@@ -431,6 +447,7 @@ public final class EndgameStudyProgress {
     // =========================================================
 
     public synchronized void resetFamily(String family) {
+        sessions.remove(family);
         String prefix = family + "|";
 
         positions.entrySet().removeIf(
@@ -574,6 +591,7 @@ public final class EndgameStudyProgress {
 
 
     public synchronized void clear() {
+        sessions.clear();
         positions.clear();
         cursors.clear();
         orders.clear();

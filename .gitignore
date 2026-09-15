@@ -39,3 +39,10 @@ tablebase-test-output/
 
 # Maven build output
 /target/
+
+# Local endgame verification captures and personal save files
+/docs/qe7-evidence/
+endgame-study-progress.tsv
+endgame-study-progress.tsv.tmp
+endgame-study-sequence.properties
+endgame-study-sequence.properties.tmp

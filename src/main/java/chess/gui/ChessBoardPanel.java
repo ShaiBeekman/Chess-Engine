@@ -239,6 +239,19 @@ public class ChessBoardPanel extends JPanel {
     }
 
 
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        // A Swing canvas still receives its custom mouse listeners when disabled.
+        // Cancel any gesture immediately when entering review or surrendering.
+        if (!enabled && interactionCompletions != null) {
+            clearSelection();
+            cancelDrag();
+            clearPendingPromotion();
+            repaint();
+        }
+    }
+
     public void setFlipped(boolean flipped) {
         this.flipped = flipped;
         clearSelection();
@@ -989,6 +1002,10 @@ public class ChessBoardPanel extends JPanel {
             MouseEvent event
     ) {
 
+        if (!isEnabled()) {
+            return;
+        }
+
         if (!hasPendingPromotion()) {
 
             if (hoveredPromotionChoice != -1) {
@@ -1024,6 +1041,10 @@ public class ChessBoardPanel extends JPanel {
     private void handleMousePressed(
             MouseEvent event
     ) {
+
+        if (!isEnabled()) {
+            return;
+        }
 
         if (hasPendingPromotion()) {
 
@@ -1122,6 +1143,10 @@ public class ChessBoardPanel extends JPanel {
             MouseEvent event
     ) {
 
+        if (!isEnabled()) {
+            return;
+        }
+
         if (hasPendingPromotion()) {
             return;
         }
@@ -1173,6 +1198,10 @@ public class ChessBoardPanel extends JPanel {
     private void handleMouseReleased(
             MouseEvent event
     ) {
+
+        if (!isEnabled()) {
+            return;
+        }
 
         if (hasPendingPromotion()) {
             return;
@@ -1319,6 +1348,10 @@ public class ChessBoardPanel extends JPanel {
     private void executeMove(
             Move move
     ) {
+
+        if (!isEnabled()) {
+            return;
+        }
 
         Position moveBase =
                 getDisplayedPosition();

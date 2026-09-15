@@ -14,6 +14,7 @@ import java.util.Set;
 
 public final class EndgameStudyProgressStore {
 
+    // Optional session records are ignored by older V4 readers; keep their progress readable.
     private static final String VERSION =
             "DOVETAIL_ENDGAME_PROGRESS_V4";
 
@@ -84,6 +85,22 @@ public final class EndgameStudyProgressStore {
                 }
 
                 String[] parts = line.split("\\t", -1);
+
+                if (parts.length == 2 && "@SELECTED".equals(parts[0])) {
+                    result.selectFamily(unescape(parts[1]));
+                    continue;
+                }
+                if (parts.length >= 6 && "@SESSION".equals(parts[0])) {
+                    try {
+                        java.util.ArrayList<String> history = new java.util.ArrayList<>();
+                        for (int h = 6; h < parts.length; h++) history.add(unescape(parts[h]));
+                        result.setSession(unescape(parts[1]), new EndgameStudyProgress.Session(
+                                Integer.parseInt(parts[2]), history, Boolean.parseBoolean(parts[3]),
+                                Boolean.parseBoolean(parts[4]), Boolean.parseBoolean(parts[5])));
+                    } catch (RuntimeException ignored) { }
+                    continue;
+                }
+
 
                 if (parts.length == 3
                         && "@CURSOR".equals(parts[0])) {
@@ -237,6 +254,17 @@ public final class EndgameStudyProgressStore {
 
         text.append(VERSION).append('\n');
 
+        text.append("@SELECTED\t").append(escape(progress.selectedFamily())).append('\n');
+        for (var entry : progress.sessionSnapshot().entrySet()) {
+            var session = entry.getValue();
+            text.append("@SESSION\t").append(escape(entry.getKey())).append('\t')
+                    .append(session.index()).append('\t').append(session.clean()).append('\t')
+                    .append(session.attemptRecorded()).append('\t').append(session.givenUp());
+            for (String fen : session.history()) text.append('\t').append(escape(fen));
+            text.append('\n');
+        }
+
+
         for (Map.Entry<String, EndgameStudyProgress.PositionProgress> entry
                 : progress.snapshot().entrySet()) {
 
@@ -336,6 +364,7 @@ public final class EndgameStudyProgressStore {
             String version
     ) {
         return VERSION.equals(version)
+                || "DOVETAIL_ENDGAME_PROGRESS_V5".equals(version)
                 || "DOVETAIL_ENDGAME_PROGRESS_V3".equals(version)
                 || "DOVETAIL_ENDGAME_PROGRESS_V2".equals(version)
                 || "DOVETAIL_ENDGAME_PROGRESS_V1".equals(version);

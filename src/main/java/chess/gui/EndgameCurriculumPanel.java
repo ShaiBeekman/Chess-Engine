@@ -87,6 +87,7 @@ public final class EndgameCurriculumPanel extends JPanel {
             );
 
     private final EndgamePlayedLine playedLine = new EndgamePlayedLine();
+    private final JLabel playedLineTitle = EndgameWorkspace.section("PLAYED LINE / MOVE REVIEW");
 
     private final JButton resetProgressButton =
             button("Reset All Endgame Progress");
@@ -181,7 +182,7 @@ public final class EndgameCurriculumPanel extends JPanel {
         JPanel path = EndgameWorkspace.card(new BorderLayout(0, 8));
         path.setName("playedLineCard");
         path.add(new EndgameWorkspace.Pair(EndgameWorkspace.stack(6,
-                EndgameWorkspace.section("PLAYED LINE / MOVE REVIEW"), moveReviewValue), navigation), BorderLayout.NORTH);
+                playedLineTitle, moveReviewValue), navigation), BorderLayout.NORTH);
         path.add(playedLine, BorderLayout.CENTER);
 
         JPanel body = new EndgameWorkspace.Body(new EndgameWorkspace.Pair(study, progress), path, true);
@@ -352,6 +353,10 @@ public final class EndgameCurriculumPanel extends JPanel {
         previousMoveListener = listener;
     }
 
+
+    public void setMoveSelectionListener(java.util.function.IntConsumer listener) {
+        playedLine.setSelectionListener(listener);
+    }
 
     public void setNextMoveListener(
             Runnable listener
@@ -541,6 +546,11 @@ public final class EndgameCurriculumPanel extends JPanel {
         hintButton.setEnabled(false);
     }
 
+
+    public void setSolutionRevealed(boolean revealed) {
+        playedLineTitle.setText(revealed ? "SOLUTION / MOVE REVIEW" : "PLAYED LINE / MOVE REVIEW");
+        if (revealed) instructionValue.setText("Solution revealed");
+    }
 
     public void setStatus(String status) {
         statusValue.setText(status);

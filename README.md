@@ -97,6 +97,8 @@ The `KP-KP` tablebase includes en-passant-aware state handling. Its v1.0 packed 
 
 Five-piece and larger tablebases are outside the v1.0 scope.
 
+The trainer saves puzzle order and resumes the current attempt. Hint displays an exact move; Give Up reveals a selectable solution. Reset replays saved puzzles. See [trainer verification](docs/ENDGAME-TRAINER-FIX-VERIFICATION.md) and the [Qe7 repair report](docs/QE7-REPAIR-VERIFICATION.md) for behavior, regression coverage and Windows EXE verification.
+
 ## Windows Quick Start
 
 Download `Chess-Engine-v1.0.3-windows.zip`, extract the **complete ZIP**, and double-click
@@ -145,7 +147,7 @@ On Windows x64, with Maven and JDK 26, use the verified original tablebase archi
 listed in [Runtime Assets](docs/RUNTIME-ASSETS.md):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\package-windows.ps1 -JdkHome $env:JAVA_HOME -TablebaseArchive .\Chess-Engine-v1.0.0-tablebases.zip
+powershell -NoProfile -ExecutionPolicy Bypass -File .\package-windows.ps1 -JdkHome $env:JAVA_HOME -TablebaseArchive .\Chess-Engine-v1.0.0.zip
 ```
 
 This runs a clean build, derives runtime modules using `jdeps`, bundles Java with

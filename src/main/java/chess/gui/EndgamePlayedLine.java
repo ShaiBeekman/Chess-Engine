@@ -4,10 +4,13 @@ import main.java.chess.endgame.ExactEndgameTablebase;
 import main.java.chess.model.Position;
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.function.IntConsumer;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Read-only rendering of already committed curriculum positions. No solution search or preview. */
+/** Selects existing played or solution positions without changing the played history. */
 final class EndgamePlayedLine extends JPanel {
     record Step(String san, String actor, String result, String distance) { }
     private final List<Position> positions = new ArrayList<>();
@@ -16,6 +19,7 @@ final class EndgamePlayedLine extends JPanel {
     private final JScrollPane scroll = EndgameWorkspace.scroll(canvas);
     private EndgameWorkspace.Palette palette = EndgameWorkspace.Palette.of(true);
     private int selected;
+    private IntConsumer selectionListener;
 
     EndgamePlayedLine() {
         super(new BorderLayout());
@@ -23,6 +27,10 @@ final class EndgamePlayedLine extends JPanel {
         scroll.setPreferredSize(new Dimension(0, 36));
         add(scroll);
         canvas.getAccessibleContext().setAccessibleName("Committed exact move path");
+    }
+
+    void setSelectionListener(IntConsumer listener) {
+        selectionListener = listener;
     }
 
     void applyTheme(boolean dark) { palette = EndgameWorkspace.Palette.of(dark); repaint(); }
@@ -103,7 +111,22 @@ final class EndgamePlayedLine extends JPanel {
     }
 
     private final class PathCanvas extends JPanel implements Scrollable {
-        PathCanvas() { setOpaque(false); }
+        PathCanvas() {
+            setOpaque(false);
+            setFocusable(true);
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+                @Override public void mouseClicked(MouseEvent event) {
+                    if (!isEnabled() || !SwingUtilities.isLeftMouseButton(event)
+                            || !contains(event.getPoint()) || selectionListener == null) return;
+                    int index = event.getY() < px(24) ? 0
+                            : 1 + (event.getY() - px(24)) / rowHeight();
+                    if (index > steps.size()) return;
+                    requestFocusInWindow();
+                    selectionListener.accept(index);
+                }
+            });
+        }
         private float scale() {
             JComponent owner = (JComponent) SwingUtilities.getAncestorOfClass(EndgameCurriculumPanel.class, this);
             Float scale = owner == null ? null : (Float) owner.getClientProperty("endgameScale");

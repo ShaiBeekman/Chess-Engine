@@ -10,6 +10,8 @@ import main.java.chess.endgame.EndgameSettings;
 import main.java.chess.endgame.EndgameStudyEligibility;
 import main.java.chess.endgame.EndgameStudyProgress;
 import main.java.chess.endgame.EndgameStudyProgressStore;
+import main.java.chess.endgame.EndgameStudySequence;
+import main.java.chess.endgame.EndgameStudySequenceStore;
 import main.java.chess.endgame.ThreePieceTablebase;
 import main.java.chess.endgame.ThreePieceTablebaseService;
 import main.java.chess.endgame.FourPieceTablebase;
@@ -443,7 +445,18 @@ public class ChessWindow extends JFrame {
             new EndgameStudyProgressStore();
     private final EndgameStudyProgress endgameProgress =
             endgameProgressStore.load();
-    private String selectedEndgameFamily = "Mixed";
+    private final EndgameStudySequenceStore endgameSequenceStore = new EndgameStudySequenceStore(
+            endgameProgressStore.file().resolveSibling("endgame-study-sequence.properties"));
+    private String endgameSequenceLoadFailure;
+    private final EndgameStudySequence endgameSequence = loadEndgameSequence();
+    private String selectedEndgameFamily = endgameProgress.selectedFamily();
+    private String loadedEndgameSelection;
+    private int loadedEndgameIndex = -1;
+    private boolean loadingSavedEndgame;
+    private boolean currentEndgameGivenUp;
+    private long endgameActionGeneration;
+    private long pendingEndgameSolutionRequest;
+    private List<Position> endgameSolutionHistory = List.of();
     private String pendingEndgameFamily = "Mixed";
 
     /*
@@ -584,7 +597,7 @@ public class ChessWindow extends JFrame {
                             java.awt.event.WindowEvent event
                     ) {
 
-                        deferCurrentEndgameIfIncomplete();
+                        saveCurrentEndgameSession();
 
                         if (endgameMoveReviewKeyDispatcher != null) {
                             KeyboardFocusManager
@@ -732,24 +745,9 @@ public class ChessWindow extends JFrame {
                 this::reviewNextEndgameMove
         );
 
-        endgameStudyPanel.setHintListener(
-                () -> {
-                    markCurrentEndgameAttempt(false);
-                    currentEndgameStudyClean = false;
-                    endgameStudyPanel.setStatus(
-                            "Hint used — this attempt will not count as mastered."
-                    );
-                }
-        );
-
-        endgameStudyPanel.setGiveUpListener(
-                () -> {
-                    markCurrentEndgameAttempt(false);
-                    currentEndgameStudyClean = false;
-                    deferCurrentEndgameIfIncomplete();
-                    revealEndgameAnalysis();
-                }
-        );
+        endgameStudyPanel.setMoveSelectionListener(this::reviewEndgameMove);
+        endgameStudyPanel.setHintListener(() -> requestEndgameHelp(false));
+        endgameStudyPanel.setGiveUpListener(() -> requestEndgameHelp(true));
 
         endgameStudyPanel.setResetProgressListener(
                 this::confirmResetEndgameProgress
@@ -3615,13 +3613,15 @@ public class ChessWindow extends JFrame {
 
         if (endgameStudyMode) {
 
-            if (!endgameStudyReady) {
-
-                endgameStudyPanel.setStatus(
-                        "Exact proof is still being established."
-                );
-
+            if (!endgameStudyReady || currentEndgameGivenUp
+                    || !endgameSolutionHistory.isEmpty()
+                    || endgameMoveReviewIndex != gameHistory.size() - 1) {
+                // Protect history even if a caller bypasses the canvas input guard.
+                // Rejection must restore the selected review position, not the played tail.
                 restoreCurrentEndgameStudyPosition();
+                if (loadedEndgameIndex < 0) {
+                    endgameStudyPanel.setStatus("Exact proof is still being established.");
+                }
                 return;
             }
 
@@ -3634,6 +3634,7 @@ public class ChessWindow extends JFrame {
                         );
 
 
+                invalidateEndgameHelp();
                 markCurrentEndgameAttempt(true);
 
                 if (!isExactEndgameStudyBestMove(
@@ -3642,12 +3643,12 @@ public class ChessWindow extends JFrame {
                 )) {
 
                     currentEndgameStudyClean = false;
+                    saveCurrentEndgameSession();
 
+                    restoreCurrentEndgameStudyPosition();
                     endgameStudyPanel.setStatus(
                             "Not the best move — Try again."
                     );
-
-                    restoreCurrentEndgameStudyPosition();
                     return;
                 }
 
@@ -3689,6 +3690,7 @@ public class ChessWindow extends JFrame {
                 updateBackButton();
 
                 playExactEndgameStudyDefense();
+                saveCurrentEndgameSession();
 
                 return;
             }
@@ -4342,29 +4344,7 @@ public class ChessWindow extends JFrame {
 
 
     private void restoreCurrentEndgameStudyPosition() {
-
-        if (gameHistory.isEmpty()) {
-            return;
-        }
-
-
-        Position current =
-                gameHistory.get(
-                        gameHistory.size() - 1
-                );
-
-
-        previewHistory.clear();
-
-        boardPanel.clearPreview();
-
-        boardPanel.setPosition(
-                current
-        );
-
-        boardPanel.revalidate();
-        boardPanel.repaint();
-
+        showEndgameMoveReviewPosition();
         updateBackButton();
     }
 
@@ -5077,7 +5057,7 @@ public class ChessWindow extends JFrame {
         endgameMoveController.setPracticeMode(false);
         endgameMoveController.setPracticeStrength(100);
         endgameStudyMode = true;
-        generateNextCurriculumStudy();
+        resumeEndgameSequence(false);
     }
 
 
@@ -5158,6 +5138,10 @@ public class ChessWindow extends JFrame {
     private void generateExactThreePieceStudy(
             EndgameSettings settings
     ) {
+
+        invalidateEndgameHelp();
+        loadedEndgameSelection = null;
+        loadedEndgameIndex = -1;
 
         stopGuiExplorationChain();
 
@@ -5546,6 +5530,10 @@ public class ChessWindow extends JFrame {
     private void generateExactFourPieceStudy(
             EndgameSettings settings
     ) {
+
+        invalidateEndgameHelp();
+        loadedEndgameSelection = null;
+        loadedEndgameIndex = -1;
 
         stopGuiExplorationChain();
 
@@ -5991,9 +5979,16 @@ public class ChessWindow extends JFrame {
                 currentEndgameFamily + "|" + FenCodec.toFen(position);
         currentEndgameStudyClean = true;
         currentEndgameAttemptRecorded = false;
-        String cursorFamily = selectedEndgameFamily == null ? currentEndgameFamily : selectedEndgameFamily;
-        endgameProgress.advanceCursor(cursorFamily);
-        saveEndgameProgress();
+        invalidateEndgameHelp();
+        currentEndgameGivenUp = false;
+        if (!loadingSavedEndgame) {
+            endgameSequence.append(selectedEndgameFamily, new EndgameStudySequence.Puzzle(
+                    currentEndgameFamily, FenCodec.toFen(position), settings));
+            loadedEndgameSelection = selectedEndgameFamily;
+            loadedEndgameIndex = endgameSequence.size(selectedEndgameFamily) - 1;
+            saveEndgameSequence();
+        }
+        endgameProgress.setCursor(selectedEndgameFamily, loadedEndgameIndex + 1L);
 
         endgameStudyPanel.setPosition(
                 position,
@@ -6037,6 +6032,7 @@ public class ChessWindow extends JFrame {
         );
 
 
+        if (!loadingSavedEndgame) saveCurrentEndgameSession();
         updateBackButton();
 
 
@@ -6582,24 +6578,267 @@ public class ChessWindow extends JFrame {
         return List.copyOf(families);
     }
 
+    private EndgameStudySequence loadEndgameSequence() {
+        try {
+            if (endgameSequenceStore.exists()) return endgameSequenceStore.load();
+            EndgameStudySequence migrated = EndgameStudySequence.migrate(endgameProgress);
+            if (!migrated.snapshot().isEmpty()) endgameSequenceStore.save(migrated);
+            return migrated;
+        } catch (IOException exception) {
+            endgameSequenceLoadFailure = exception.getMessage();
+            return new EndgameStudySequence();
+        }
+    }
+
+    private void saveEndgameSequence() {
+        if (endgameSequenceLoadFailure != null) return;
+        try { endgameSequenceStore.save(endgameSequence); }
+        catch (IOException exception) {
+            JOptionPane.showMessageDialog(this, "The endgame collection could not be saved:\n" + exception.getMessage(),
+                    "Endgame Sequence", JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private void saveCurrentEndgameSession() {
+        if (loadedEndgameSelection == null || loadedEndgameIndex < 0 || gameHistory.isEmpty()) return;
+        var puzzle = endgameSequence.at(loadedEndgameSelection, loadedEndgameIndex);
+        if (puzzle == null || !puzzle.id().equals(currentEndgameStudyId)
+                || !puzzle.fen().equals(FenCodec.toFen(gameHistory.getFirst()))) return;
+        endgameProgress.setSession(loadedEndgameSelection, new EndgameStudyProgress.Session(
+                loadedEndgameIndex, gameHistory.stream().map(FenCodec::toFen).toList(),
+                currentEndgameStudyClean, currentEndgameAttemptRecorded, currentEndgameGivenUp));
+        endgameProgress.selectFamily(selectedEndgameFamily);
+        saveEndgameProgress();
+    }
+
+    private void resumeEndgameSequence(boolean resetAttempt) {
+        if (endgameSequenceLoadFailure != null) {
+            stopGuiExplorationChain();
+            invalidateEndgameHelp();
+            endgameProofGeneration++;
+            endgameStudyReady = false;
+            loadedEndgameSelection = null;
+            loadedEndgameIndex = -1;
+            currentEndgameStudyId = null;
+            endgameStudyPanel.setVisible(true);
+            evaluationBar.setVisible(false);
+            analysisEngineCards.setVisible(false);
+            showAuxiliaryAnalysisCard("ENDGAME");
+            endgameStudyPanel.setLoadingTablebase("Saved sequence");
+            endgameStudyPanel.setStatus("Saved sequence could not be loaded; the file has been preserved. " + endgameSequenceLoadFailure);
+            boardPanel.setEnabled(false);
+            return;
+        }
+        var session = endgameProgress.session(selectedEndgameFamily);
+        int index = session == null ? 0 : session.index();
+        var puzzle = endgameSequence.at(selectedEndgameFamily, index);
+        if (puzzle == null) {
+            // Initial entry or an explicit Next beyond the saved tail.
+            generateNextCurriculumStudy();
+            return;
+        }
+        stopGuiExplorationChain();
+        invalidateEndgameHelp();
+        analysisRequestId++;
+        long generation = ++endgameProofGeneration;
+        endgameStudyMode = true;
+        endgameStudyReady = false;
+        loadedEndgameSelection = null;
+        loadedEndgameIndex = -1;
+        currentEndgameStudyId = null;
+        currentEndgameGivenUp = false;
+        resetEndgameMoveReview();
+        endgameStudyPanel.setVisible(true);
+        evaluationBar.setVisible(false);
+        analysisEngineCards.setVisible(false);
+        setupPanel.setVisible(false);
+        showAuxiliaryAnalysisCard("ENDGAME");
+        setAnalysisEngineSelectorEnabled(false);
+        endgameStudyPanel.setFamilies(endgameCurriculumFamilies(), selectedEndgameFamily);
+        endgameStudyPanel.setLoadingTablebase(puzzle.family());
+        endgameStudyPanel.setStatus("Loading saved position " + (index + 1) + "...");
+        boardPanel.setEnabled(false);
+        showBoardLoading(generation, puzzle.family());
+        String selection = selectedEndgameFamily;
+        new SwingWorker<ExactEndgameTablebase, Void>() {
+            protected ExactEndgameTablebase doInBackground() {
+                var tablebase = tablebaseForExactPosition(FenCodec.parse(puzzle.fen()));
+                if (tablebase == null || tablebase.probe(FenCodec.parse(puzzle.fen())).outcome()
+                        != ExactEndgameTablebase.Outcome.WIN)
+                    throw new IllegalStateException("The saved position's exact solution is unavailable.");
+                return tablebase;
+            }
+            protected void done() {
+                if (generation != endgameProofGeneration || !endgameStudyMode) return;
+                try {
+                    activeEndgameTablebase = get();
+                    pendingEndgameFamily = puzzle.family();
+                    lastEndgameSettings = puzzle.settings();
+                    loadedEndgameSelection = selection;
+                    loadedEndgameIndex = index;
+                    loadingSavedEndgame = true;
+                    installExactStudyPosition(FenCodec.parse(puzzle.fen()), puzzle.settings());
+                    loadingSavedEndgame = false;
+                    boolean restored = false;
+                    if (!resetAttempt && session != null && !session.history().isEmpty()) {
+                        List<Position> history = session.history().stream().map(FenCodec::parse).toList();
+                        boolean valid = puzzle.fen().equals(FenCodec.toFen(history.getFirst()));
+                        MoveGenerator moves = new MoveGenerator();
+                        for (int i = 1; valid && i < history.size(); i++) {
+                            Position before = history.get(i - 1), after = history.get(i);
+                            valid = moves.generateLegalMoves(before).stream()
+                                    .anyMatch(move -> FenCodec.toFen(before.makeMove(move)).equals(FenCodec.toFen(after)));
+                        }
+                        if (valid) {
+                            gameHistory.clear();
+                            gameHistory.addAll(history);
+                            currentEndgameStudyClean = session.clean();
+                            currentEndgameAttemptRecorded = session.attemptRecorded();
+                            currentEndgameGivenUp = session.givenUp();
+                            restored = true;
+                        }
+                    }
+                    Position latest = gameHistory.getLast();
+                    boardPanel.setPosition(latest);
+                    endgameStudyReady = !currentEndgameGivenUp && !new MoveGenerator().generateLegalMoves(latest).isEmpty();
+                    boardPanel.setEnabled(endgameStudyReady);
+                    syncEndgameMoveReviewToLatest();
+                    endgameStudyPanel.setStatus(restored ? "Saved attempt restored." : "Find the exact best move.");
+                    headerSubtitleLabel.setText(puzzle.settings().displayName() + " exact endgame study");
+                    refreshEndgameProgressPanel();
+                    saveCurrentEndgameSession();
+                    if (currentEndgameGivenUp) requestEndgameHelp(true);
+                } catch (Exception exception) {
+                    endgameStudyReady = false;
+                    activeEndgameTablebase = null;
+                    endgameStudyPanel.setStatus("Saved puzzle retained; its solution could not be loaded: " + getUsefulMessage(exception));
+                } finally {
+                    loadingSavedEndgame = false;
+                    hideBoardLoading(generation);
+                    analysisArea.revalidate();
+                    analysisArea.repaint();
+                }
+            }
+        }.execute();
+    }
+
+    private List<Position> endgameReviewHistory() {
+        return endgameSolutionHistory.isEmpty() ? gameHistory : endgameSolutionHistory;
+    }
+
+    private void invalidateEndgameHelp() {
+        endgameActionGeneration++;
+        pendingEndgameSolutionRequest = 0;
+        endgameSolutionHistory = List.of();
+        endgameStudyPanel.setSolutionRevealed(false);
+    }
+
+    /** Both actions use the displayed position, never a cached root or unrelated analysis panel. */
+    private void requestEndgameHelp(boolean giveUp) {
+        if (!endgameStudyMode || loadedEndgameIndex < 0 || activeEndgameTablebase == null) {
+            endgameStudyPanel.setStatus("Exact solution is loading or unavailable. Retry when the study has loaded.");
+            return;
+        }
+        // Surrender must finish revealing its line even if another help button is pressed.
+        if (pendingEndgameSolutionRequest != 0) {
+            endgameStudyPanel.setStatus("Finding the exact solution...");
+            return;
+        }
+        Position position = boardPanel.getPosition();
+        boolean completedAttempt = !endgameStudyReady && !currentEndgameGivenUp;
+        if (giveUp && completedAttempt) {
+            endgameStudyPanel.setStatus("This attempt is already finished. Reset the puzzle to try again.");
+            return;
+        }
+        if (new MoveGenerator().generateLegalMoves(position).isEmpty()) {
+            endgameStudyPanel.setStatus("This position is finished; there are no legal moves to reveal.");
+            return;
+        }
+        List<Position> prefix = List.copyOf(endgameReviewHistory().subList(0, endgameMoveReviewIndex + 1));
+        long generation = endgameProofGeneration;
+        long request = ++endgameActionGeneration;
+        if (giveUp) {
+            pendingEndgameSolutionRequest = request;
+            markCurrentEndgameAttempt(false);
+            currentEndgameGivenUp = true;
+            endgameStudyReady = false;
+            deferCurrentEndgameIfIncomplete();
+            boardPanel.setEnabled(false);
+            saveCurrentEndgameSession();
+        }
+        endgameStudyPanel.setStatus(giveUp ? "Finding the exact solution..." : "Finding an exact hint...");
+        new SwingWorker<List<Position>, Void>() {
+            protected List<Position> doInBackground() {
+                List<Position> line = new ArrayList<>();
+                line.add(position);
+                Position current = position;
+                MoveGenerator generator = new MoveGenerator();
+                for (int ply = 0; ply < 1024; ply++) {
+                    List<Move> legal = generator.generateLegalMoves(current);
+                    if (legal.isEmpty()) return line;
+                    ExactEndgameTablebase tablebase = tablebaseForExactPosition(current);
+                    if (tablebase == null || tablebase.probe(current).outcome() == ExactEndgameTablebase.Outcome.UNSUPPORTED)
+                        throw new IllegalStateException("Exact analysis is unavailable for this position.");
+                    List<Move> best = tablebase.bestMoves(current);
+                    if (best.isEmpty() || !legal.contains(best.getFirst()))
+                        throw new IllegalStateException("No valid exact move is available for this position.");
+                    current = current.makeMove(best.getFirst());
+                    line.add(current);
+                    if (!giveUp) return line;
+                }
+                throw new IllegalStateException("The exact solution could not be completed within 1024 moves.");
+            }
+            protected void done() {
+                if (generation != endgameProofGeneration || !endgameStudyMode) return;
+                if (giveUp) {
+                    if (request != pendingEndgameSolutionRequest) return;
+                } else if (request != endgameActionGeneration || boardPanel.getPosition() != position) {
+                    return;
+                }
+                try {
+                    List<Position> line = get();
+                    if (line.size() < 2) {
+                        endgameStudyPanel.setStatus("This position is finished; there are no legal moves to reveal.");
+                        return;
+                    }
+                    String side = position.getSideToMove() == main.java.chess.model.Color.WHITE ? "White" : "Black";
+                    String move = findManualMoveSan(position, line.get(1));
+                    if (giveUp) {
+                        List<Position> solution = new ArrayList<>(prefix);
+                        solution.addAll(line.subList(1, line.size()));
+                        endgameSolutionHistory = List.copyOf(solution);
+                        // Review navigation may have changed the displayed ply while solving.
+                        endgameMoveReviewIndex = prefix.size() - 1;
+                        endgameStudyPanel.setSolutionRevealed(true);
+                        showEndgameMoveReviewPosition();
+                        endgameStudyPanel.setStatus("Given up - saved for review, not mastered. Solution: " + side + " " + move
+                                + ". Select a move or use Next Move to follow the line. Reset to play again.");
+                    } else {
+                        if (!currentEndgameGivenUp && !completedAttempt) markCurrentEndgameAttempt(false);
+                        endgameStudyPanel.setStatus("Hint: " + side + " to move - " + move
+                                + (completedAttempt ? ". Completed study review."
+                                : ". This assisted attempt will not count as mastered."));
+                        saveCurrentEndgameSession();
+                    }
+                } catch (Exception exception) {
+                    endgameStudyPanel.setStatus((giveUp ? "Attempt given up and saved for review. Solution unavailable: " : "Hint unavailable: ")
+                            + getUsefulMessage(exception));
+                } finally {
+                    if (giveUp && request == pendingEndgameSolutionRequest) pendingEndgameSolutionRequest = 0;
+                }
+            }
+        }.execute();
+    }
+
     private void selectEndgameFamily(String family) {
         if (family == null || family.isBlank()) return;
-        deferCurrentEndgameIfIncomplete();
+        saveCurrentEndgameSession();
         selectedEndgameFamily = family;
+        endgameProgress.selectFamily(family);
+        saveEndgameProgress();
         currentEndgameCurriculumTotal = 0;
         currentEndgameLegalTotal = 0;
-        refreshEndgameProgressPanel();
-        if ("KQK".equals(family) || "KRK".equals(family) || "KPK".equals(family)) {
-            generateEndgame(EndgameSettings.fixed(3));
-        } else if (!"Mixed".equals(family)) {
-            generateEndgame(EndgameSettings.fixed(4));
-        } else {
-            /*
-             * Switching back to Mixed immediately delivers a new Mixed study.
-             * The study size is selected randomly rather than alternating.
-             */
-            generateNextCurriculumStudy();
-        }
+        resumeEndgameSequence(false);
     }
 
 
@@ -6677,8 +6916,17 @@ public class ChessWindow extends JFrame {
 
 
     private void advanceCurriculumPosition() {
+        if (loadedEndgameIndex < 0) {
+            resumeEndgameSequence(false);
+            return;
+        }
         deferCurrentEndgameIfIncomplete();
-        generateNextCurriculumStudy();
+        int next = loadedEndgameIndex + 1;
+        endgameProgress.setSession(selectedEndgameFamily,
+                new EndgameStudyProgress.Session(next, List.of(), true, false, false));
+        saveEndgameProgress();
+        // Next explicitly extends the collection only after its saved tail.
+        resumeEndgameSequence(false);
     }
 
 
@@ -7679,9 +7927,17 @@ public class ChessWindow extends JFrame {
         return activeWindow == this;
     }
 
+    private void reviewEndgameMove(int index) {
+        if (!endgameStudyMode || index < 0 || index >= endgameReviewHistory().size()) {
+            return;
+        }
+        endgameMoveReviewIndex = index;
+        showEndgameMoveReviewPosition();
+    }
+
     private void reviewFirstEndgameMove() {
         if (!endgameStudyMode
-                || gameHistory.isEmpty()) {
+                || endgameReviewHistory().isEmpty()) {
             return;
         }
 
@@ -7691,24 +7947,24 @@ public class ChessWindow extends JFrame {
 
     private void reviewLatestEndgameMove() {
         if (!endgameStudyMode
-                || gameHistory.isEmpty()) {
+                || endgameReviewHistory().isEmpty()) {
             return;
         }
 
         endgameMoveReviewIndex =
-                gameHistory.size() - 1;
+                endgameReviewHistory().size() - 1;
         showEndgameMoveReviewPosition();
     }
 
 
     private void reviewPreviousEndgameMove() {
         if (!endgameStudyMode
-                || gameHistory.isEmpty()) {
+                || endgameReviewHistory().isEmpty()) {
             return;
         }
 
         int lastIndex =
-                gameHistory.size() - 1;
+                endgameReviewHistory().size() - 1;
 
         endgameMoveReviewIndex =
                 Math.max(
@@ -7729,12 +7985,12 @@ public class ChessWindow extends JFrame {
 
     private void reviewNextEndgameMove() {
         if (!endgameStudyMode
-                || gameHistory.isEmpty()) {
+                || endgameReviewHistory().isEmpty()) {
             return;
         }
 
         int lastIndex =
-                gameHistory.size() - 1;
+                endgameReviewHistory().size() - 1;
 
         endgameMoveReviewIndex =
                 Math.max(
@@ -7755,12 +8011,12 @@ public class ChessWindow extends JFrame {
 
     private void showEndgameMoveReviewPosition() {
         if (!endgameStudyMode
-                || gameHistory.isEmpty()) {
+                || endgameReviewHistory().isEmpty()) {
             return;
         }
 
         int lastIndex =
-                gameHistory.size() - 1;
+                endgameReviewHistory().size() - 1;
 
         endgameMoveReviewIndex =
                 Math.max(
@@ -7772,10 +8028,16 @@ public class ChessWindow extends JFrame {
                 );
 
         Position displayed =
-                gameHistory.get(
+                endgameReviewHistory().get(
                         endgameMoveReviewIndex
                 );
 
+        if (boardPanel.getPosition() != displayed) {
+            endgameActionGeneration++;
+            endgameStudyPanel.setStatus(currentEndgameGivenUp
+                    ? "Select a move or use Previous / Next Move to explore the solution. Reset to play again."
+                    : "Move review: hints apply to the displayed position. Return to the latest move to continue.");
+        }
         previewHistory.clear();
         boardPanel.clearPreview();
         boardPanel.setPosition(
@@ -7788,7 +8050,7 @@ public class ChessWindow extends JFrame {
                 displayed
         );
 
-        endgameStudyPanel.setPlayedLine(gameHistory, activeEndgameTablebase);
+        endgameStudyPanel.setPlayedLine(endgameReviewHistory(), endgameSolutionHistory.isEmpty() ? activeEndgameTablebase : null);
         endgameStudyPanel.setMoveReviewState(
                 endgameMoveReviewIndex,
                 lastIndex
@@ -7940,7 +8202,7 @@ public class ChessWindow extends JFrame {
                 completed,
                 mastered,
                 displayCurriculumTotal,
-                endgameProgress.cursor(progressFamily),
+                Math.max(0, loadedEndgameIndex),
                 reviewCount,
                 endgameProgress.studyOrder(progressFamily)
         );
@@ -8307,10 +8569,15 @@ public class ChessWindow extends JFrame {
 
 
     private void setEndgameStudyOrder(EndgameStudyProgress.StudyOrder order) {
-        String family = selectedEndgameFamily == null ? "Mixed" : selectedEndgameFamily;
+        String family = selectedEndgameFamily;
+        if (order == endgameProgress.studyOrder(family)) return;
+        saveCurrentEndgameSession();
+        endgameSequence.reorder(family, order, endgameStudyRandom);
+        saveEndgameSequence();
         endgameProgress.setStudyOrder(family, order);
+        endgameProgress.clearSession(family);
         saveEndgameProgress();
-        refreshEndgameProgressPanel();
+        resumeEndgameSequence(true);
     }
 
     private void confirmResetCurrentEndgameFamily() {
@@ -8320,21 +8587,19 @@ public class ChessWindow extends JFrame {
             return;
         }
         int first = JOptionPane.showConfirmDialog(this,
-                "This will permanently erase every " + family + " attempt, mastery, studied-position record, and ordered-study position.\n\nOther families will not be changed. Continue?",
-                "Reset " + family + " Progress — Warning 1 of 2", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                "Reset all " + family + " attempts and mastery? The saved puzzles and their order will be kept.",
+                "Reset " + family + " Progress - Warning 1 of 2", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (first != JOptionPane.YES_OPTION) return;
         int second = JOptionPane.showConfirmDialog(this,
-                "FINAL WARNING\n\nAll " + family + " curriculum progress will be permanently deleted and Ordered mode will restart at Position 1.\n\nAre you absolutely sure?",
-                "Reset " + family + " Progress — Final Warning", JOptionPane.YES_NO_OPTION, JOptionPane.ERROR_MESSAGE);
+                "Erase " + family + " progress and replay its saved sequence from Position 1?",
+                "Reset " + family + " Progress - Final Warning", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (second != JOptionPane.YES_OPTION) return;
+        var order = endgameProgress.studyOrder(family);
         endgameProgress.resetFamily(family);
+        endgameProgress.setStudyOrder(family, order);
         endgameFreshStudiesSinceReview.remove(family);
         saveEndgameProgress();
-        currentEndgameStudyId = null;
-        currentEndgameAttemptRecorded = false;
-        currentEndgameStudyClean = true;
-        refreshEndgameProgressPanel();
-        endgameStudyPanel.setStatus(family + " curriculum progress reset. Ordered study restarts at Position 1.");
+        resumeEndgameSequence(true);
     }
 
     private java.util.Random curriculumRandom(String family) {
@@ -8359,81 +8624,25 @@ public class ChessWindow extends JFrame {
     }
 
     private void confirmResetEndgameProgress() {
-        int first = JOptionPane.showConfirmDialog(
-                this,
-                "This will permanently erase every Endgame Study attempt, mastery, and studied-position record.\n\nContinue?",
-                "Reset Endgame Progress — Warning 1 of 2",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.WARNING_MESSAGE
-        );
+        int first = JOptionPane.showConfirmDialog(this,
+                "Reset all Endgame attempts and mastery? All saved puzzles and their order will be kept.",
+                "Reset Endgame Progress - Warning 1 of 2", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (first != JOptionPane.YES_OPTION) return;
-
-        int second = JOptionPane.showConfirmDialog(
-                this,
-                "FINAL WARNING\n\nAll Endgame Study progress will be permanently deleted. This cannot be undone.\n\nAre you absolutely sure?",
-                "Reset Endgame Progress — Final Warning",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.ERROR_MESSAGE
-        );
+        int second = JOptionPane.showConfirmDialog(this,
+                "Erase all Endgame progress and replay the saved sequences from Position 1?",
+                "Reset Endgame Progress - Final Warning", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (second != JOptionPane.YES_OPTION) return;
-
-        try {
-            endgameProgressStore.clear();
-            endgameProgress.clear();
-            endgameFreshStudiesSinceReview.clear();
-            currentEndgameStudyId = null;
-            currentEndgameAttemptRecorded = false;
-            currentEndgameStudyClean = true;
-            refreshEndgameProgressPanel();
-            endgameStudyPanel.setStatus("Endgame Study progress reset.");
-        } catch (java.io.IOException exception) {
-            JOptionPane.showMessageDialog(this,
-                    "Endgame progress could not be reset:\n" + exception.getMessage(),
-                    "Endgame Progress", JOptionPane.ERROR_MESSAGE);
-        }
+        var orders = endgameProgress.orderSnapshot();
+        endgameProgress.clear();
+        endgameProgress.replaceOrders(orders);
+        endgameFreshStudiesSinceReview.clear();
+        saveEndgameProgress();
+        resumeEndgameSequence(true);
     }
-
-    private void revealEndgameAnalysis() {
-
-        hideBoardLoading();
-        setAnalysisEngineSelectorEnabled(true);
-
-        endgameStudyMode =
-                false;
-
-
-        endgameProofGeneration++;
-
-
-        boardPanel.setEnabled(
-                true
-        );
-
-
-        endgameStudyPanel.setVisible(
-                false
-        );
-
-
-        evaluationBar.setVisible(
-                true
-        );
-
-
-        showActiveAnalysisEngineCard();
-
-
-        headerSubtitleLabel.setText(
-                "Endgame analysis"
-        );
-
-
-        analysisArea.revalidate();
-        analysisArea.repaint();
-    }
-
 
     private void beginPositionSetup() {
+
+        saveCurrentEndgameSession();
 
         /*
          * Setup is a clean position-construction workspace. It always starts
@@ -9014,6 +9223,8 @@ public class ChessWindow extends JFrame {
 
     private void returnToEngineHome() {
 
+        saveCurrentEndgameSession();
+
         /*
          * Engine Home is an unconditional navigation action rather than a
          * confirmation-based Reset. It exits Setup/Endgame and returns the
@@ -9056,6 +9267,12 @@ public class ChessWindow extends JFrame {
 
 
     private void resetToStartingPosition() {
+
+        if (endgameStudyMode) {
+            if (loadedEndgameIndex < 0) endgameStudyPanel.setStatus("Wait for the current puzzle to finish loading before resetting it.");
+            else resumeEndgameSequence(true);
+            return;
+        }
 
         int result =
                 JOptionPane.showConfirmDialog(
